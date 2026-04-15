@@ -53,3 +53,9 @@ apphost.settings.json
 *.pfx
 *.crt
 *.p12
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/

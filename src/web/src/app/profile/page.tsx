@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 interface User {
@@ -86,6 +87,12 @@ export default function ProfilePage() {
         <p className="text-gray-600">
           Member since {formatDate(user.createdAt)}
         </p>
+        <Link
+          href="/podcasts"
+          className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+        >
+          Create a podcast
+        </Link>
         <p className="text-sm text-gray-400">Use the Logout button in the navigation bar to sign out.</p>
       </div>
     </main>

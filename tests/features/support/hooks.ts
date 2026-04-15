@@ -1,15 +1,24 @@
 import { Before, After, AfterStep, BeforeAll, AfterAll, setDefaultTimeout } from '@cucumber/cucumber';
 import { CustomWorld } from './world';
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { execSync, ChildProcess } from 'child_process';
 
 setDefaultTimeout(30_000);
 
+const DOTNET_TOOLS_PATH = path.join(os.homedir(), '.dotnet', 'tools');
+if (!process.env.PATH?.split(path.delimiter).includes(DOTNET_TOOLS_PATH)) {
+  process.env.PATH = process.env.PATH
+    ? `${process.env.PATH}${path.delimiter}${DOTNET_TOOLS_PATH}`
+    : DOTNET_TOOLS_PATH;
+}
+
 const SCREENSHOT_BASE_DIR = path.resolve(process.cwd(), 'docs', 'screenshots');
 const GENERATE_SCREENSHOTS = process.env.GENERATE_SCREENSHOTS === 'true';
 const WEB_URL = process.env.WEB_URL || 'http://localhost:3001';
 const API_URL = process.env.API_URL || 'http://localhost:5001';
+const APPHOST_PATH = path.resolve(process.cwd(), 'apphost.cs');
 
 let aspireStarted = false;
 
@@ -24,7 +33,10 @@ async function isServerRunning(url: string): Promise<boolean> {
 
 function isAspireRunning(): boolean {
   try {
-    const output = execSync('aspire ps --format Json --nologo 2>/dev/null', { encoding: 'utf-8' });
+    const output = execSync('aspire ps --format Json --nologo', {
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    });
     const parsed = JSON.parse(output);
     return Array.isArray(parsed) && parsed.length > 0;
   } catch {
@@ -39,7 +51,7 @@ BeforeAll(async function () {
   if (!(await isServerRunning(`${API_URL}/health`))) {
     if (!isAspireRunning()) {
       console.log('Starting Aspire AppHost...');
-      execSync('aspire start --nologo', {
+      execSync(`aspire start --apphost "${APPHOST_PATH}" --nologo`, {
         cwd: process.cwd(),
         stdio: 'inherit',
         timeout: 60000,
@@ -49,7 +61,7 @@ BeforeAll(async function () {
 
     // Wait for API to be healthy
     console.log('Waiting for API to be healthy...');
-    execSync('aspire wait api --status healthy --timeout 60 --nologo', {
+    execSync(`aspire wait api --apphost "${APPHOST_PATH}" --status healthy --timeout 60 --nologo`, {
       stdio: 'inherit',
       timeout: 70000,
     });
@@ -57,7 +69,7 @@ BeforeAll(async function () {
     // Wait for Web to be healthy when generating screenshots or running @ui tests
     if (GENERATE_SCREENSHOTS) {
       console.log('Waiting for Web to be healthy...');
-      execSync('aspire wait web --status healthy --timeout 60 --nologo', {
+      execSync(`aspire wait web --apphost "${APPHOST_PATH}" --status healthy --timeout 60 --nologo`, {
         stdio: 'inherit',
         timeout: 70000,
       });
@@ -75,25 +87,21 @@ Before(async function (this: CustomWorld, { pickle, gherkinDocument }) {
   this.scenarioName = pickle.name || 'unknown-scenario';
   this.stepIndex = 0;
 
-  // Open browser for @ui tagged scenarios, OR for all scenarios when generating screenshots
-  const tags = pickle.tags?.map(t => t.name) || [];
-  if (tags.includes('@ui') || GENERATE_SCREENSHOTS) {
-    await this.openBrowser();
-    // Navigate to the actual app so screenshots aren't blank
-    if (this.page) {
-      try {
-        await this.page.goto(WEB_URL, { waitUntil: 'networkidle', timeout: 15000 });
-      } catch {
-        // App may not be fully loaded yet — still take screenshots
-        try { await this.page.goto(WEB_URL, { waitUntil: 'domcontentloaded', timeout: 10000 }); } catch { /* best effort */ }
-      }
+  await this.openBrowser();
+  // Navigate to the actual app so screenshots aren't blank
+  if (this.page) {
+    try {
+      await this.page.goto(WEB_URL, { waitUntil: 'networkidle', timeout: 15000 });
+    } catch {
+      // App may not be fully loaded yet — still take screenshots
+      try { await this.page.goto(WEB_URL, { waitUntil: 'domcontentloaded', timeout: 10000 }); } catch { /* best effort */ }
     }
   }
 });
 
 AfterStep(async function (this: CustomWorld, { pickleStep, result }) {
   this.stepIndex++;
-  if (this.page) {
+  if (this.page && GENERATE_SCREENSHOTS) {
     const stepText = pickleStep?.text || `step-${this.stepIndex}`;
     // Extract Gherkin keyword from the step text (Given/When/Then/And)
     const keyword = (pickleStep as any)?.keyword?.trim() ||
@@ -139,7 +147,12 @@ After(async function (this: CustomWorld, { result }) {
 AfterAll(async function () {
   // Stop Aspire if we started it
   if (aspireStarted) {
-    try { execSync('aspire stop --nologo', { stdio: 'inherit', timeout: 15000 }); } catch { /* already stopped */ }
+    try {
+      execSync(`aspire stop --apphost "${APPHOST_PATH}" --nologo`, {
+        stdio: 'inherit',
+        timeout: 15000,
+      });
+    } catch { /* already stopped */ }
     aspireStarted = false;
   }
 });

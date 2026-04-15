@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 
 interface User {
   username: string;
@@ -14,6 +14,8 @@ export default function NavBar() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const pathname = usePathname();
+  const hideGuestAuthLinks = pathname === '/login' || pathname === '/register';
 
   useEffect(() => {
     fetch('/api/auth/me')
@@ -40,6 +42,9 @@ export default function NavBar() {
       <div className="flex items-center gap-4">
         {loading ? null : user ? (
           <>
+            <Link href="/podcasts" className="text-gray-700 hover:text-gray-900">
+              Podcasts
+            </Link>
             <Link href="/profile" className="text-gray-700 hover:text-gray-900">
               Profile
             </Link>
@@ -55,7 +60,7 @@ export default function NavBar() {
               Logout
             </button>
           </>
-        ) : (
+        ) : hideGuestAuthLinks ? null : (
           <>
             <Link href="/login" className="text-gray-700 hover:text-gray-900">
               Login

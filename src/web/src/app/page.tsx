@@ -19,12 +19,20 @@ export default function Home() {
         A simple authentication demo application.
       </p>
       {authenticated === true && (
-        <Link
-          href="/profile"
-          className="rounded bg-blue-600 px-6 py-2.5 font-medium text-white hover:bg-blue-700"
-        >
-          Go to Profile
-        </Link>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/profile"
+            className="rounded bg-blue-600 px-6 py-2.5 font-medium text-white hover:bg-blue-700"
+          >
+            Go to Profile
+          </Link>
+          <Link
+            href="/podcasts"
+            className="rounded border border-blue-600 px-6 py-2.5 font-medium text-blue-600 hover:bg-blue-50"
+          >
+            Create Podcast
+          </Link>
+        </div>
       )}
       {authenticated === false && (
         <div className="flex gap-4">

@@ -22,7 +22,7 @@ describe('POST /api/auth/login', () => {
     expect(cookies.toString()).toMatch(/token=/);
   });
 
-  it('should set JWT cookie with correct security attributes', async () => {
+  it('should set JWT cookie with standard auth attributes', async () => {
     await request(app)
       .post('/api/auth/register')
       .send({ username: 'cookieuser', password: 'securepass123' });
@@ -35,10 +35,44 @@ describe('POST /api/auth/login', () => {
     expect(cookies).toBeDefined();
     const cookieStr = cookies.toString();
     expect(cookieStr).toMatch(/HttpOnly/i);
-    expect(cookieStr).toMatch(/Secure/i);
     expect(cookieStr).toMatch(/SameSite=Strict/i);
     expect(cookieStr).toMatch(/Path=\//);
     expect(cookieStr).toMatch(/Max-Age=86400/);
+  });
+
+  it('should set secure cookies for non-local hosts', async () => {
+    await request(app)
+      .post('/api/auth/register')
+      .set('x-forwarded-host', 'podcasts.example.com')
+      .send({ username: 'securecookieuser', password: 'securepass123' });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .set('x-forwarded-host', 'podcasts.example.com')
+      .send({ username: 'securecookieuser', password: 'securepass123' });
+
+    const cookies = res.headers['set-cookie'];
+    expect(cookies).toBeDefined();
+    const cookieStr = cookies.toString();
+    expect(cookieStr).toMatch(/Secure/i);
+  });
+
+  it('should keep loopback cookies host-only when the app is accessed via 127.0.0.1', async () => {
+    await request(app)
+      .post('/api/auth/register')
+      .set('x-forwarded-host', '127.0.0.1:3000')
+      .send({ username: 'loopbackuser', password: 'securepass123' });
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .set('x-forwarded-host', '127.0.0.1:3000')
+      .send({ username: 'loopbackuser', password: 'securepass123' });
+
+    const cookies = res.headers['set-cookie'];
+    expect(cookies).toBeDefined();
+    const cookieStr = cookies.toString();
+    expect(cookieStr).not.toMatch(/Domain=/i);
+    expect(cookieStr).not.toMatch(/Secure/i);
   });
 
   it('should return 401 for invalid password', async () => {

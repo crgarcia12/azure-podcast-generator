@@ -1,5 +1,5 @@
 {
-  "mode": "pending",
+  "mode": "brownfield",
   "currentPhase": "setup",
   "productDiscovery": {
     "specRefinement": { "status": "pending" },
@@ -18,13 +18,20 @@
     "prdGenerator": { "status": "pending" },
     "frdGenerator": { "status": "pending" }
   },
-  "activePaths": [],
+  "activePaths": ["extend"],
   "assessment": {},
   "adrs": {
     "nextNumber": 1,
     "records": []
   },
-  "incrementPlan": [],
+  "incrementPlan": [
+    {
+      "id": "ext-001",
+      "type": "extension",
+      "frd": "frd-podcast-generator.md",
+      "status": "planned"
+    }
+  ],
   "currentIncrement": null,
   "increments": {},
   "humanGates": {
@@ -39,5 +46,5 @@
     "plan-approved": false
   },
   "testsStatus": {},
-  "lastUpdated": "2026-03-16T00:00:00Z"
+  "lastUpdated": "2026-04-13T22:12:36Z"
 }

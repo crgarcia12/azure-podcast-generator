@@ -1,21 +1,71 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
 import pinoHttp from 'pino-http';
+import { hashSync } from 'bcryptjs';
 import { logger } from './logger.js';
 import { mapHealthEndpoints } from './routes/health.js';
 import { mapChatEndpoints } from './routes/chat.js';
 import { mapAuthEndpoints } from './routes/auth.js';
 import { mapAdminEndpoints } from './routes/admin.js';
+import { mapPodcastEndpoints } from './routes/podcasts.js';
 import { clearUsers, addUser, getUserByUsername, deleteUser } from './models/user-store.js';
+import { clearPodcastEpisodes } from './models/podcast-store.js';
+import { createPodcastService, type PodcastService } from './services/podcast-service.js';
 
-export function createApp(): express.Express {
+interface AppDependencies {
+  podcastService?: PodcastService;
+}
+
+const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001'];
+
+function getAllowedOrigins(): string[] {
+  const configuredOrigins = process.env.ALLOWED_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return configuredOrigins?.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+function seedConfiguredAdminUser(): void {
+  const username = process.env.SEED_ADMIN_USERNAME?.trim();
+  const password = process.env.SEED_ADMIN_PASSWORD?.trim();
+
+  if (!username || !password || getUserByUsername(username)) {
+    return;
+  }
+
+  addUser({
+    id: randomUUID(),
+    username,
+    passwordHash: hashSync(password, 10),
+    role: 'admin',
+    createdAt: new Date(),
+  });
+}
+
+export function createApp(dependencies: AppDependencies = {}): express.Express {
   const app = express();
+  const podcastService = dependencies.podcastService ?? createPodcastService();
+  const allowedOrigins = new Set(getAllowedOrigins());
+
+  seedConfiguredAdminUser();
 
   // Middleware
   app.use(helmet());
-  app.use(cors());
+  app.use(cors({
+    credentials: true,
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(new Error('Origin not allowed by CORS'));
+    },
+  }));
   app.use(express.json());
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));
@@ -25,11 +75,13 @@ export function createApp(): express.Express {
   mapChatEndpoints(app);
   mapAuthEndpoints(app);
   mapAdminEndpoints(app);
+  mapPodcastEndpoints(app, podcastService);
 
   // Test-only: reset endpoint for e2e test isolation
   if (process.env.NODE_ENV !== 'production') {
     app.post('/api/test/reset', (_req, res) => {
       clearUsers();
+      clearPodcastEpisodes();
       res.json({ message: 'Store cleared' });
     });
 

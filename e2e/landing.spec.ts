@@ -1,24 +1,12 @@
-import { test, expect, Page } from '@playwright/test';
-
-async function registerUser(page: Page, username: string, password: string) {
-  await page.request.post('/api/auth/register', { data: { username, password } });
-}
-
-async function loginUser(page: Page, username: string, password: string) {
-  await page.request.post('/api/auth/login', { data: { username, password } });
-}
-
-function uniqueUser() {
-  return `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
+import { test, expect } from '@playwright/test';
+import { loginUser, registerUser, resetAppState, uniqueUser } from './test-helpers';
 
 test.beforeEach(async ({ context }) => {
-  await context.request.post('http://localhost:5001/api/test/reset');
-  await context.clearCookies();
+  await resetAppState(context);
 });
 
 test.describe('Landing Page', () => {
-  test('guest should see heading, description, and Login/Register CTAs', async ({ page }) => {
+  test('@smoke guest should see heading, description, and Login/Register CTAs', async ({ page }) => {
     await page.goto('/');
 
     await expect(page.getByRole('heading', { name: /userauth/i })).toBeVisible();

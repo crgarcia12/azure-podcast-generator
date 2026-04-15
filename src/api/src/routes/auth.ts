@@ -1,4 +1,4 @@
-import { type Express } from 'express';
+import { type Express, type Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
@@ -12,6 +12,39 @@ const getSecret = (): string => {
   }
   return secret;
 };
+
+const LOCAL_HOST_REGEX = /^(localhost|127\.0\.0\.1)(:\d+)?$/i;
+
+const getRequestHostname = (req: Request): string | undefined =>
+  req.get('x-forwarded-host')?.split(',')[0]?.trim().split(':')[0] ?? req.get('host')?.split(':')[0];
+
+const shouldUseSecureCookies = (req: Request): boolean => {
+  if (process.env.COOKIE_SECURE === 'true') {
+    return true;
+  }
+
+  const forwardedHost = req.get('x-forwarded-host')?.split(',')[0]?.trim();
+  return !forwardedHost || !LOCAL_HOST_REGEX.test(forwardedHost);
+};
+
+const getLegacyLocalCookieDomain = (req: Request): string | undefined =>
+  /^localhost$/i.test(getRequestHostname(req) ?? '') ? 'localhost' : undefined;
+
+const getAuthCookieOptions = (req: Request, maxAge: number) => ({
+  httpOnly: true,
+  secure: shouldUseSecureCookies(req),
+  sameSite: 'strict' as const,
+  path: '/',
+  maxAge,
+});
+
+const getAuthClearCookieOptions = (req: Request) => ({
+  httpOnly: true,
+  secure: shouldUseSecureCookies(req),
+  sameSite: 'strict' as const,
+  path: '/',
+});
+
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,30}$/;
 
 export function mapAuthEndpoints(app: Express): void {
@@ -62,13 +95,7 @@ export function mapAuthEndpoints(app: Express): void {
       { expiresIn: '24h' },
     );
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 86400 * 1000,
-    });
+    res.cookie('token', token, getAuthCookieOptions(req, 86400 * 1000));
 
     res.status(201).json({ message: 'Registration successful', role });
   });
@@ -99,25 +126,29 @@ export function mapAuthEndpoints(app: Express): void {
       { expiresIn: '24h' },
     );
 
-    res.cookie('token', token, {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/',
-      maxAge: 86400 * 1000,
-    });
+    res.cookie('token', token, getAuthCookieOptions(req, 86400 * 1000));
 
     res.status(200).json({ message: 'Login successful' });
   });
 
-  app.post('/api/auth/logout', (_req, res) => {
+  app.post('/api/auth/logout', (req, res) => {
+    const clearOptions = getAuthClearCookieOptions(req);
+    const legacyCookieDomain = getLegacyLocalCookieDomain(req);
+
     res.cookie('token', '', {
-      httpOnly: true,
-      secure: true,
-      sameSite: 'strict',
-      path: '/',
+      ...clearOptions,
+      expires: new Date(0),
       maxAge: 0,
     });
+    if (legacyCookieDomain) {
+      res.cookie('token', '', {
+        ...clearOptions,
+        domain: legacyCookieDomain,
+        expires: new Date(0),
+        maxAge: 0,
+      });
+    }
+
     res.status(200).json({ message: 'Logged out successfully' });
   });
 

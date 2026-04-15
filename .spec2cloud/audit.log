@@ -14,3 +14,6 @@
 [2026-02-13T10:46:00Z] phase=4 action=implementation result=success description="All tests green: 31 API unit tests pass, 23 Playwright e2e tests pass. Backend: user store, auth middleware, auth routes, admin routes. Frontend: NavBar, landing, login, register, profile, admin pages."
 [2026-02-13T10:51:00Z] phase=4 action=human-gate result=approved
 [2026-02-13T10:51:00Z] phase=5 action=phase-start result=beginning-deployment
+[2026-04-13T22:12:36Z] step=extension-planning action=frds-generated count=1 result=done description="Created frd-podcast-generator.md for authenticated topic-driven podcast generation with Azure OpenAI and Azure AI Speech"
+[2026-04-13T22:12:36Z] step=extension-planning action=increments-generated count=1 result=done description="Planned ext-001 for end-to-end topic submission, script generation, speech synthesis, and mobile playback"
+[2026-04-13T22:12:36Z] step=research action=azure-ai-patterns result=done description="Verified Azure OpenAI Node.js guidance, Azure AI Speech browser playback guidance, and Azure Container Apps secret management patterns"

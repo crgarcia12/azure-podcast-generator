@@ -1,37 +1,40 @@
-import { test, expect, Page } from '@playwright/test';
-
-async function registerUser(page: Page, username: string, password: string) {
-  await page.request.post('/api/auth/register', { data: { username, password } });
-}
-
-async function loginUser(page: Page, username: string, password: string) {
-  await page.request.post('/api/auth/login', { data: { username, password } });
-}
-
-function uniqueUser() {
-  return `user_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-}
+import { test, expect } from '@playwright/test';
+import {
+  getAdminCredentials,
+  isRemoteEnvironment,
+  loginUser,
+  registerUser,
+  resetAppState,
+  uniqueUser,
+} from './test-helpers';
 
 test.beforeEach(async ({ context }) => {
-  await context.request.post('http://localhost:5001/api/test/reset');
-  await context.clearCookies();
+  await resetAppState(context);
 });
 
 test.describe('Admin Dashboard', () => {
   test('admin should see a table with all users', async ({ page }) => {
-    // First registered user becomes admin
-    const adminUser = uniqueUser();
     const password = 'SecurePass123!';
-    await registerUser(page, adminUser, password);
+    let adminUser = uniqueUser('admin');
+    let adminPassword = password;
+
+    if (isRemoteEnvironment()) {
+      const seededAdmin = getAdminCredentials();
+      adminUser = seededAdmin.username;
+      adminPassword = seededAdmin.password;
+      await loginUser(page, seededAdmin.username, seededAdmin.password);
+    } else {
+      await registerUser(page, adminUser, password);
+    }
 
     // Register a second regular user
     const regularUser = uniqueUser();
     await registerUser(page, regularUser, password);
+    await loginUser(page, adminUser, adminPassword);
 
-    await loginUser(page, adminUser, password);
     await page.goto('/admin');
 
-    await expect(page.getByRole('columnheader', { name: /username/i })).toBeVisible();
+    await expect(page.getByRole('columnheader', { name: /username/i })).toBeVisible({ timeout: 15000 });
     await expect(page.getByRole('columnheader', { name: /role/i })).toBeVisible();
     await expect(page.getByRole('columnheader', { name: /member since/i })).toBeVisible();
     await expect(page.getByRole('cell', { name: adminUser })).toBeVisible();
@@ -39,9 +42,9 @@ test.describe('Admin Dashboard', () => {
   });
 
   test('non-admin user should see access denied message', async ({ page }) => {
-    // Create admin first
-    const adminUser = uniqueUser();
-    await registerUser(page, adminUser, 'SecurePass123!');
+    if (!isRemoteEnvironment()) {
+      await registerUser(page, uniqueUser('admin'), 'SecurePass123!');
+    }
 
     // Create and login as regular user
     const regularUser = uniqueUser();

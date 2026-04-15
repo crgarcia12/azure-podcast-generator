@@ -142,6 +142,17 @@ Then('I should not see a {string} button', async function (this: CustomWorld, na
 });
 
 Then('the {string} cookie should be cleared', async function (this: CustomWorld, cookieName: string) {
+  for (let attempt = 0; attempt < 25; attempt += 1) {
+    const cookies = await this.context.cookies();
+    const cookie = cookies.find((c) => c.name === cookieName);
+
+    if (!cookie || cookie.value === '') {
+      return;
+    }
+
+    await this.page.waitForTimeout(200);
+  }
+
   const cookies = await this.context.cookies();
   const cookie = cookies.find((c) => c.name === cookieName);
   assert.ok(!cookie || cookie.value === '', `Expected cookie "${cookieName}" to be cleared`);

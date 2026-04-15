@@ -1,4 +1,14 @@
+import os from 'node:os';
+import path from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
+
+const dotnetToolsPath = path.join(os.homedir(), '.dotnet', 'tools');
+if (!process.env.PATH?.split(path.delimiter).includes(dotnetToolsPath)) {
+  process.env.PATH = process.env.PATH
+    ? `${process.env.PATH}${path.delimiter}${dotnetToolsPath}`
+    : dotnetToolsPath;
+}
+const appHostPath = path.join(process.cwd(), 'apphost.cs');
 
 export default defineConfig({
   testDir: '.',
@@ -20,7 +30,7 @@ export default defineConfig({
     },
   ],
   webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
-    command: 'aspire start --nologo && aspire wait web --status healthy --timeout 90 --nologo',
+    command: `aspire start --apphost "${appHostPath}" --nologo && aspire wait web --apphost "${appHostPath}" --status healthy --timeout 90 --nologo`,
     url: 'http://localhost:3001',
     reuseExistingServer: !process.env.CI,
     timeout: 120000,
