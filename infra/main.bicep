@@ -138,7 +138,7 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
       }
       {
         name: 'JWT_SECRET'
-        value: uniqueString(resourceGroup().id, resourceToken, 'jwt-secret')
+        value: uniqueString(rg.id, resourceToken, 'jwt-secret')
       }
     ]
     containerAppsEnvironmentName: containerApps.outputs.environmentName
