@@ -104,6 +104,7 @@ module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
     containerName: 'main'
     identityName: webIdentity.name
     userAssignedIdentityResourceId: webIdentity.outputs.resourceId
+    targetPort: 3000
     containerMinReplicas: 1
     identityPrincipalId: webIdentity.outputs.principalId
   }
