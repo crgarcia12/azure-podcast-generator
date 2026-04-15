@@ -131,15 +131,60 @@ jobs:
       - name: Capture deployment outputs
         id: capture_outputs
         shell: bash
+        env:
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'crgar-podcast-rg' }}
+          WEB_CONTAINER_APP_NAME: ${{ vars.WEB_CONTAINER_APP_NAME || 'crgar-podcast-web' }}
+          API_CONTAINER_APP_NAME: ${{ vars.API_CONTAINER_APP_NAME || 'crgar-podcast-api' }}
         run: |
-          web_url="$(azd env get-value SERVICE_WEB_ENDPOINT_URL 2>/dev/null || true)"
+          read_env_value() {
+            local key="$1"
+            local line
+
+            line="$(azd env get-values | grep -m1 "^${key}=" || true)"
+            if [[ -n "${line}" ]]; then
+              echo "${line#*=}" | sed -e 's/^"//' -e 's/"$//'
+            fi
+          }
+
+          resolve_container_app_url() {
+            local app_name="$1"
+            local fqdn
+
+            if [[ -z "${app_name}" ]]; then
+              return 0
+            fi
+
+            fqdn="$(az containerapp show \
+              --resource-group "${AZURE_RESOURCE_GROUP}" \
+              --name "${app_name}" \
+              --query "properties.configuration.ingress.fqdn" \
+              -o tsv 2>/dev/null || true)"
+
+            if [[ -n "${fqdn}" ]]; then
+              echo "https://${fqdn}"
+            fi
+          }
+
+          web_url="$(read_env_value SERVICE_WEB_ENDPOINT_URL)"
           if [[ -z "${web_url}" ]]; then
-            web_url="$(azd env get-value REACT_APP_WEB_BASE_URL)"
+            web_url="$(read_env_value REACT_APP_WEB_BASE_URL)"
+          fi
+          if [[ -z "${web_url}" ]]; then
+            web_url="$(resolve_container_app_url "${WEB_CONTAINER_APP_NAME}")"
           fi
 
-          api_url="$(azd env get-value SERVICE_API_ENDPOINT_URL 2>/dev/null || true)"
+          api_url="$(read_env_value SERVICE_API_ENDPOINT_URL)"
           if [[ -z "${api_url}" ]]; then
-            api_url="$(azd env get-value API_BASE_URL)"
+            api_url="$(read_env_value API_BASE_URL)"
+          fi
+          if [[ -z "${api_url}" ]]; then
+            api_url="$(resolve_container_app_url "${API_CONTAINER_APP_NAME}")"
+          fi
+
+          if [[ -z "${web_url}" || -z "${api_url}" ]]; then
+            echo "Unable to resolve deployment outputs." >&2
+            azd env get-values || true
+            exit 1
           fi
 
           echo "web_url=${web_url}" >> "${GITHUB_OUTPUT}"
