@@ -15,19 +15,7 @@ Given('I am logged in as a user with username {string} and role {string} created
   }
   // Login
   await this.apiRequest('POST', '/api/auth/login', { username, password: 'TestPassword1!' });
-  // Inject cookies into browser context
-  if (this.context && this.cookies.length) {
-    for (const cookieStr of this.cookies) {
-      const [nameValue] = cookieStr.split(';');
-      const [name, ...valueParts] = nameValue.split('=');
-      await this.context.addCookies([{
-        name: name.trim(),
-        value: valueParts.join('=').trim(),
-        domain: 'localhost',
-        path: '/',
-      }]);
-    }
-  }
+  await this.syncCookiesToBrowser();
 });
 
 Given('I am not authenticated', async function (this: CustomWorld) {
@@ -59,46 +47,24 @@ Given('I have an expired JWT token', async function (this: CustomWorld) {
   const fakeSignature = 'invalidsignature';
   const expiredToken = `${header}.${payload}.${fakeSignature}`;
   if (this.context) {
-    await this.context.addCookies([{
-      name: 'token',
-      value: expiredToken,
-      domain: 'localhost',
-      path: '/',
-    }]);
+    this.cookies = [`token=${expiredToken}`];
+    await this.syncCookiesToBrowser();
   }
-  this.cookies = [`token=${expiredToken}`];
 });
 
 Given('I have a malformed JWT token', async function (this: CustomWorld) {
   const malformedToken = 'not.a.valid.jwt.at.all';
   if (this.context) {
-    await this.context.addCookies([{
-      name: 'token',
-      value: malformedToken,
-      domain: 'localhost',
-      path: '/',
-    }]);
+    this.cookies = [`token=${malformedToken}`];
+    await this.syncCookiesToBrowser();
   }
-  this.cookies = [`token=${malformedToken}`];
 });
 
 Given('I have a valid JWT token for a deleted user', async function (this: CustomWorld) {
   // Create and login a user to get a valid JWT, then delete the user
   await this.apiRequest('POST', '/api/test/create-user', { username: 'deleted_user', password: 'TestPassword1!', role: 'user' });
   await this.apiRequest('POST', '/api/auth/login', { username: 'deleted_user', password: 'TestPassword1!' });
-  // Inject cookies into browser
-  if (this.context && this.cookies.length) {
-    for (const cookieStr of this.cookies) {
-      const [nameValue] = cookieStr.split(';');
-      const [name, ...valueParts] = nameValue.split('=');
-      await this.context.addCookies([{
-        name: name.trim(),
-        value: valueParts.join('=').trim(),
-        domain: 'localhost',
-        path: '/',
-      }]);
-    }
-  }
+  await this.syncCookiesToBrowser();
   // Delete the user so the JWT is now for a non-existent user
   await fetch(`${this.apiBaseUrl}/api/test/users/deleted_user`, { method: 'DELETE' });
 });

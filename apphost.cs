@@ -12,6 +12,7 @@ var api = builder.AddJavaScriptApp("api", "./src/api")
 
 // Web — Next.js frontend
 builder.AddJavaScriptApp("web", "./src/web")
+    .WithHttpEndpoint(port: 3001, env: "PORT")
     .WithExternalHttpEndpoints()
     .WithReference(api)
     .WaitFor(api);

@@ -17,8 +17,8 @@ export class CustomWorld extends World {
 
   response: { status: number; body: any; headers: Headers } | null = null;
   cookies: string[] = [];
-  apiBaseUrl = 'http://localhost:5001';
-  webBaseUrl = 'http://localhost:3000';
+  apiBaseUrl = process.env.API_URL || 'http://localhost:5001';
+  webBaseUrl = process.env.WEB_URL || 'http://localhost:3001';
   storedPasswords: Record<string, string> = {};
   tamperedJwt: string | null = null;
 
@@ -32,6 +32,25 @@ export class CustomWorld extends World {
     if (setCookies.length) this.cookies = setCookies;
     const responseBody = await res.json().catch(() => null);
     this.response = { status: res.status, body: responseBody, headers: res.headers };
+  }
+
+  async syncCookiesToBrowser(): Promise<void> {
+    if (!this.context || this.cookies.length === 0) {
+      return;
+    }
+
+    await this.context.addCookies(
+      this.cookies.map((cookieStr) => {
+        const [nameValue] = cookieStr.split(';');
+        const [name, ...valueParts] = nameValue.split('=');
+
+        return {
+          name: name.trim(),
+          value: valueParts.join('=').trim(),
+          url: this.apiBaseUrl,
+        };
+      }),
+    );
   }
 
   /** Inject a step overlay bar at the bottom of the page */

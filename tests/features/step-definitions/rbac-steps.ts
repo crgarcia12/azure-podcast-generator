@@ -24,19 +24,7 @@ Given('a registered admin {string} with password {string}', async function (this
 
 Given('I am logged in as {string} with password {string}', async function (this: CustomWorld, username: string, password: string) {
   await this.apiRequest('POST', '/api/auth/login', { username, password });
-  // Also inject cookies into browser context for UI scenarios
-  if (this.context && this.cookies.length) {
-    for (const cookieStr of this.cookies) {
-      const [nameValue] = cookieStr.split(';');
-      const [name, ...valueParts] = nameValue.split('=');
-      await this.context.addCookies([{
-        name: name.trim(),
-        value: valueParts.join('=').trim(),
-        domain: 'localhost',
-        path: '/',
-      }]);
-    }
-  }
+  await this.syncCookiesToBrowser();
 });
 
 Given('I have a tampered JWT for {string} with role {string}', async function (this: CustomWorld, username: string, role: string) {

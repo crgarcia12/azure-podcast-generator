@@ -46,8 +46,17 @@ jobs:
       - name: Ensure azd environment
         shell: bash
         env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'crgar-podcast-prod' }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus3' }}
+          AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP || 'crgar-podcast-rg' }}
+          CONTAINER_APPS_ENVIRONMENT_NAME: ${{ vars.CONTAINER_APPS_ENVIRONMENT_NAME || 'crgar-podcast-acae' }}
+          CONTAINER_REGISTRY_NAME: ${{ vars.CONTAINER_REGISTRY_NAME || 'crgarpodcastacr' }}
+          WEB_CONTAINER_APP_NAME: ${{ vars.WEB_CONTAINER_APP_NAME || 'crgar-podcast-web' }}
+          API_CONTAINER_APP_NAME: ${{ vars.API_CONTAINER_APP_NAME || 'crgar-podcast-api' }}
+          LOG_ANALYTICS_WORKSPACE_NAME: ${{ vars.LOG_ANALYTICS_WORKSPACE_NAME || 'crgar-podcast-law' }}
+          APPLICATION_INSIGHTS_NAME: ${{ vars.APPLICATION_INSIGHTS_NAME || 'crgar-podcast-appi' }}
+          API_IDENTITY_NAME: ${{ vars.API_IDENTITY_NAME || 'crgar-podcast-api-mi' }}
+          WEB_IDENTITY_NAME: ${{ vars.WEB_IDENTITY_NAME || 'crgar-podcast-web-mi' }}
         run: |
           if ! azd env select "${AZURE_ENV_NAME}" >/dev/null 2>&1; then
             azd env new "${AZURE_ENV_NAME}" --no-prompt
@@ -55,18 +64,27 @@ jobs:
 
           azd env set AZURE_LOCATION "${AZURE_LOCATION}"
           azd env set AZURE_SUBSCRIPTION_ID "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+          azd env set AZURE_RESOURCE_GROUP "${AZURE_RESOURCE_GROUP}"
+          azd env set CONTAINER_APPS_ENVIRONMENT_NAME "${CONTAINER_APPS_ENVIRONMENT_NAME}"
+          azd env set CONTAINER_REGISTRY_NAME "${CONTAINER_REGISTRY_NAME}"
+          azd env set WEB_CONTAINER_APP_NAME "${WEB_CONTAINER_APP_NAME}"
+          azd env set API_CONTAINER_APP_NAME "${API_CONTAINER_APP_NAME}"
+          azd env set LOG_ANALYTICS_WORKSPACE_NAME "${LOG_ANALYTICS_WORKSPACE_NAME}"
+          azd env set APPLICATION_INSIGHTS_NAME "${APPLICATION_INSIGHTS_NAME}"
+          azd env set API_IDENTITY_NAME "${API_IDENTITY_NAME}"
+          azd env set WEB_IDENTITY_NAME "${WEB_IDENTITY_NAME}"
 
       - name: Provision infrastructure
         run: azd provision --no-prompt
         env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'crgar-podcast-prod' }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus3' }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy application
         run: azd deploy --no-prompt
         env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'crgar-podcast-prod' }}
           AZURE_LOCATION: ${{ vars.AZURE_LOCATION || 'westus3' }}
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
@@ -96,7 +114,7 @@ jobs:
       - name: Configure API container app
         run: bash ./infra/scripts/configure-api-containerapp.sh
         env:
-          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'prod' }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME || 'crgar-podcast-prod' }}
           ALLOWED_ORIGINS: ${{ vars.ALLOWED_ORIGINS || '' }}
           AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT || '' }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
@@ -107,7 +125,7 @@ jobs:
           AZURE_SPEECH_RESOURCE_ID: ${{ vars.AZURE_SPEECH_RESOURCE_ID || '' }}
           PODCAST_HOST_VOICE: ${{ vars.PODCAST_HOST_VOICE || 'en-US-JennyNeural' }}
           PODCAST_GUEST_VOICE: ${{ vars.PODCAST_GUEST_VOICE || 'en-US-GuyNeural' }}
-          SEED_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'spec2cloud-admin' }}
+          SEED_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'podcast-admin' }}
           SEED_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
       - name: Capture deployment outputs
@@ -165,14 +183,14 @@ jobs:
         run: npx playwright test --grep @smoke --config=e2e/playwright.config.ts
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.web_url }}
-          E2E_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'spec2cloud-admin' }}
+          E2E_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'podcast-admin' }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
       - name: Run full live e2e suite
         run: npx playwright test --config=e2e/playwright.config.ts
         env:
           PLAYWRIGHT_BASE_URL: ${{ needs.deploy.outputs.web_url }}
-          E2E_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'spec2cloud-admin' }}
+          E2E_ADMIN_USERNAME: ${{ vars.E2E_ADMIN_USERNAME || 'podcast-admin' }}
           E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
 
       - name: Upload smoke test report

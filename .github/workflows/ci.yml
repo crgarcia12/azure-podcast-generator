@@ -53,39 +53,39 @@ jobs:
       - name: Start web
         run: |
           cd src/web
-          NEXT_PUBLIC_API_URL=http://127.0.0.1:5001 npm run dev > ../../web.log 2>&1 &
+          NEXT_PUBLIC_API_URL=http://localhost:5001 npm run dev > ../../web.log 2>&1 &
           echo $! > ../../web.pid
 
       - name: Wait for services
         run: |
           for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:5001/health > /dev/null; then
+            if curl -fsS http://localhost:5001/health > /dev/null; then
               break
             fi
             sleep 2
           done
 
           for i in {1..60}; do
-            if curl -fsS http://127.0.0.1:3000 > /dev/null; then
+            if curl -fsS http://localhost:3000 > /dev/null; then
               break
             fi
             sleep 2
           done
 
-          curl -fsS http://127.0.0.1:5001/health > /dev/null
-          curl -fsS http://127.0.0.1:3000 > /dev/null
+          curl -fsS http://localhost:5001/health > /dev/null
+          curl -fsS http://localhost:3000 > /dev/null
 
       - name: Run Cucumber tests
         run: npx cucumber-js
         env:
-          API_URL: http://127.0.0.1:5001
-          WEB_URL: http://127.0.0.1:3000
+          API_URL: http://localhost:5001
+          WEB_URL: http://localhost:3000
 
       - name: Run Playwright tests
         run: npx playwright test --config=e2e/playwright.config.ts
         env:
-          PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
-          PLAYWRIGHT_API_BASE_URL: http://127.0.0.1:5001
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
+          PLAYWRIGHT_API_BASE_URL: http://localhost:5001
 
       - name: Upload test artifacts
         uses: actions/upload-artifact@v4

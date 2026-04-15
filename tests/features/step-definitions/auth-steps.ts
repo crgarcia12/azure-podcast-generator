@@ -23,19 +23,7 @@ Given('the user {string} is logged in', async function (this: CustomWorld, usern
   const password = this.storedPasswords[username];
   assert.ok(password, `No stored password for user "${username}"`);
   await this.apiRequest('POST', '/api/auth/login', { username, password });
-  // Also inject cookies into the browser context for UI scenarios
-  if (this.context && this.cookies.length) {
-    for (const cookieStr of this.cookies) {
-      const [nameValue] = cookieStr.split(';');
-      const [name, ...valueParts] = nameValue.split('=');
-      await this.context.addCookies([{
-        name: name.trim(),
-        value: valueParts.join('=').trim(),
-        domain: 'localhost',
-        path: '/',
-      }]);
-    }
-  }
+  await this.syncCookiesToBrowser();
 });
 
 Given('I am not logged in', async function (this: CustomWorld) {
@@ -172,7 +160,11 @@ Then('the {string} cookie should contain a valid JWT', async function (this: Cus
 // ── Then steps — UI ─────────────────────────────────────────────
 
 Then('I should be redirected to {string}', async function (this: CustomWorld, expectedPath: string) {
-  await this.page.waitForURL(`**${expectedPath}*`, { timeout: 5000 });
+  await this.page.waitForFunction(
+    (targetPath) => `${window.location.pathname}${window.location.search}`.includes(targetPath),
+    expectedPath,
+    { timeout: 5000 },
+  );
   const url = new URL(this.page.url());
   const pathWithQuery = url.pathname + url.search;
   assert.ok(pathWithQuery.includes(expectedPath), `Expected URL to contain "${expectedPath}" but got "${pathWithQuery}"`);

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '../lib/api';
 
 interface User {
   username: string;
@@ -27,7 +28,7 @@ export default function ProfilePage() {
   function fetchProfile() {
     setLoading(true);
     setError(false);
-    fetch('/api/auth/me')
+    apiFetch('/api/auth/me')
       .then((res) => {
         if (res.status === 401) {
           router.push('/login');
@@ -49,7 +50,7 @@ export default function ProfilePage() {
   }, []);
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await apiFetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
   }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch, toApiUrl } from '../lib/api';
 
 interface PodcastTranscriptTurn {
   id: string;
@@ -37,7 +38,7 @@ export default function PodcastsPage() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch('/api/auth/me')
+    apiFetch('/api/auth/me')
       .then(async (response) => {
         if (response.status === 401) {
           router.push('/login');
@@ -69,7 +70,7 @@ export default function PodcastsPage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/podcasts', {
+      const response = await apiFetch('/api/podcasts', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -186,8 +187,8 @@ export default function PodcastsPage() {
                   className="w-full"
                   controls
                   preload="metadata"
-                  src={episode.audioUrl}
-                />
+                   src={toApiUrl(episode.audioUrl)}
+                 />
               ) : (
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                   The script is ready, but audio is not available for this attempt yet.

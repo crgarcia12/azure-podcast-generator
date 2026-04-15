@@ -14,15 +14,13 @@ param resourceGroupName string = 'rg-${environmentName}'
 @description('Primary location for all resources')
 param location string
 
-@description('Id of the user or app to assign application roles')
-param principalId string
-
-@description('Principal type of user or app')
-param principalType string
-
 param apiContainerAppName string = ''
 param containerAppsEnvironmentName string = ''
 param containerRegistryName string = ''
+param logAnalyticsWorkspaceName string = ''
+param applicationInsightsName string = ''
+param apiIdentityName string = ''
+param webIdentityName string = ''
 param webContainerAppName string = ''
 param webAppExists bool = false
 param apiAppExists bool = false
@@ -31,8 +29,9 @@ var tags = {
   'azd-env-name': environmentName
 }
 
-var abbrs = loadJsonContent('./abbreviations.json')
+var defaultNamePrefix = toLower(replace(environmentName, '_', '-'))
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var defaultContainerRegistryName = take('${replace(defaultNamePrefix, '-', '')}acr${resourceToken}', 50)
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
@@ -45,7 +44,7 @@ module logAnalytics 'core/monitor/loganalytics.bicep' = {
   name: 'loganalytics'
   scope: rg
   params: {
-    name: 'logs-${resourceToken}'
+    name: !empty(logAnalyticsWorkspaceName) ? logAnalyticsWorkspaceName : '${defaultNamePrefix}-law'
     location: location
     tags: tags
   }
@@ -55,7 +54,7 @@ module applicationInsights 'core/monitor/applicationinsights.bicep' = {
   name: 'applicationinsights'
   scope: rg
   params: {
-    name: 'appi-${resourceToken}'
+    name: !empty(applicationInsightsName) ? applicationInsightsName : '${defaultNamePrefix}-appi'
     location: location
     tags: tags
     logAnalyticsWorkspaceId: logAnalytics.outputs.id
@@ -67,8 +66,8 @@ module containerApps 'br/public:avm/ptn/azd/container-apps-stack:0.1.0' = {
   name: 'container-apps'
   scope: rg
   params: {
-    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
-    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
+    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${defaultNamePrefix}-acae'
+    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : defaultContainerRegistryName
     logAnalyticsWorkspaceResourceId: logAnalytics.outputs.id
     appInsightsConnectionString: applicationInsights.outputs.connectionString
     acrSku: 'Basic'
@@ -84,7 +83,7 @@ module webIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
   name: 'webidentity'
   scope: rg
   params: {
-    name: '${abbrs.managedIdentityUserAssignedIdentities}web-${resourceToken}'
+    name: !empty(webIdentityName) ? webIdentityName : '${defaultNamePrefix}-web-mi'
     location: location
   }
 }
@@ -94,7 +93,7 @@ module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
   name: 'web-container-app'
   scope: rg
   params: {
-    name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
+    name: !empty(webContainerAppName) ? webContainerAppName : '${defaultNamePrefix}-web'
     tags: union(tags, { 'azd-service-name': 'web' })
     location: location
     containerAppsEnvironmentName: containerApps.outputs.environmentName
@@ -115,7 +114,7 @@ module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.
   name: 'apiidentity'
   scope: rg
   params: {
-    name: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
+    name: !empty(apiIdentityName) ? apiIdentityName : '${defaultNamePrefix}-api-mi'
     location: location
   }
 }
@@ -125,7 +124,7 @@ module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
   name: 'api-container-app'
   scope: rg
   params: {
-    name: !empty(apiContainerAppName) ? apiContainerAppName : '${abbrs.appContainerApps}api-${resourceToken}'
+    name: !empty(apiContainerAppName) ? apiContainerAppName : '${defaultNamePrefix}-api'
     tags: union(tags, { 'azd-service-name': 'api' })
     location: location
     env: [

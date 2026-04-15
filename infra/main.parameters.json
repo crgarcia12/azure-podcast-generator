@@ -11,11 +11,29 @@
       "location": {
         "value": "${AZURE_LOCATION}"
       },
-      "principalId": {
-        "value": "${AZURE_PRINCIPAL_ID}"
+      "apiContainerAppName": {
+        "value": "${API_CONTAINER_APP_NAME}"
       },
-      "principalType": {
-        "value": "${AZURE_PRINCIPAL_TYPE}"
+      "containerAppsEnvironmentName": {
+        "value": "${CONTAINER_APPS_ENVIRONMENT_NAME}"
+      },
+      "containerRegistryName": {
+        "value": "${CONTAINER_REGISTRY_NAME}"
+      },
+      "logAnalyticsWorkspaceName": {
+        "value": "${LOG_ANALYTICS_WORKSPACE_NAME}"
+      },
+      "applicationInsightsName": {
+        "value": "${APPLICATION_INSIGHTS_NAME}"
+      },
+      "apiIdentityName": {
+        "value": "${API_IDENTITY_NAME}"
+      },
+      "webIdentityName": {
+        "value": "${WEB_IDENTITY_NAME}"
+      },
+      "webContainerAppName": {
+        "value": "${WEB_CONTAINER_APP_NAME}"
       }
     }
 }

@@ -36,7 +36,7 @@ test.describe('Registration', () => {
     await page.getByLabel('Password').fill('SecurePass123!');
     await page.getByRole('button', { name: 'Register' }).click();
 
-    await expect(page.getByText(/username/i)).toBeVisible();
+    await expect(page.getByText('Username must be between 3 and 30 characters and contain only letters, numbers, and underscores')).toBeVisible();
   });
 
   test('should show validation error for short password', async ({ page }) => {
@@ -44,7 +44,7 @@ test.describe('Registration', () => {
     await page.getByLabel('Password').fill('short');
     await page.getByRole('button', { name: 'Register' }).click();
 
-    await expect(page.getByText(/password/i)).toBeVisible();
+    await expect(page.getByText('Password must be at least 8 characters')).toBeVisible();
   });
 
   test('should have a link to login page', async ({ page }) => {

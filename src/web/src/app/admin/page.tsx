@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { apiFetch } from '../lib/api';
 
 interface User {
   username: string;
@@ -24,7 +25,7 @@ export default function AdminPage() {
   const router = useRouter();
 
   useEffect(() => {
-    fetch('/api/auth/me')
+    apiFetch('/api/auth/me')
       .then((res) => {
         if (res.status === 401) {
           router.push('/login');
@@ -40,7 +41,7 @@ export default function AdminPage() {
           setLoading(false);
           return;
         }
-        return fetch('/api/admin/users')
+        return apiFetch('/api/admin/users')
           .then((res) => {
             if (!res.ok) throw new Error('Failed');
             return res.json();

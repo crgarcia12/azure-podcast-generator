@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { apiFetch } from '../lib/api';
 
 interface User {
   username: string;
@@ -18,7 +19,7 @@ export default function NavBar() {
   const hideGuestAuthLinks = pathname === '/login' || pathname === '/register';
 
   useEffect(() => {
-    fetch('/api/auth/me')
+    apiFetch('/api/auth/me')
       .then((res) => {
         if (res.ok) return res.json();
         return null;
@@ -29,7 +30,7 @@ export default function NavBar() {
   }, []);
 
   async function handleLogout() {
-    await fetch('/api/auth/logout', { method: 'POST' });
+    await apiFetch('/api/auth/logout', { method: 'POST' });
     setUser(null);
     router.push('/login');
   }
