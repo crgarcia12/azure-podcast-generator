@@ -1,115 +1,127 @@
-# spec2cloud · Next.js + TypeScript Shell
+# Azure Podcast Generator
 
-**Transform product specifications into production-ready applications on Azure — AI-powered, human-approved, spec-driven.**
+Create short, interview-style podcast episodes from a topic. Authenticated users can generate a script, read the transcript, and listen to audio directly in the browser.
 
-spec2cloud is a spec-driven development framework where **specifications are the single source of truth**. Tests are generated from specs, implementation makes those tests pass, and the result is deployed to Azure — all orchestrated by an AI agent with **43 specialized skills**. Every step is resumable, auditable, and requires human approval before anything ships.
+## What the app does
 
-This is the **Next.js + TypeScript shell** — a pre-configured template with the full tech stack wired up and ready to go.
+- Supports registration, login, profile, and admin flows
+- Lets signed-in users open `/podcasts` and submit a topic
+- Generates a host-and-guest transcript for the episode
+- Plays synthesized audio in the browser
+- Falls back to a mock provider for local development when Azure AI settings are not configured
 
-## Why spec2cloud?
-
-- **Specifications are the source of truth** — not code, not comments, not wikis
-- **Tests before code** — every feature has tests before implementation begins
-- **Human approval at every gate** — nothing ships without your sign-off
-- **Resumable from any point** — state persisted in git, pick up where you left off
-- **Works for new and existing apps** — greenfield builds new, brownfield modernizes existing
-- **Live research** — agents query Microsoft Learn, Context7, and DeepWiki before writing a single line
-
-## Two Paths, One Pipeline
-
-**Greenfield** — Start with a product idea → PRD → FRD → UI prototypes → Tests → Contracts → Implementation → Deployed on Azure.
-
-**Brownfield** — Start with existing code → Extract specs → Testability gate → Green baseline or behavioral docs → Assess → Plan → Same delivery pipeline.
-
-Both converge on the same **Phase 2 delivery**: Tests → Contracts → Implementation → Deploy.
-
-## How It Works
-
-<p align="center">
-  <img src="docs/spec2cloud-flow.gif" alt="spec2cloud animated flow — Ralph Loop, phase pipeline, and increment delivery" width="100%">
-</p>
-
-> **[▶ Interactive version](docs/spec2cloud-flow.html)** — open in your browser for playback controls and speed adjustment.
-
-Human approval gates pause the pipeline at every critical transition — nothing ships without your sign-off.
-
-1. **Write a PRD** — plain-language product requirements in `specs/prd.md`
-2. **Agents refine** — PRD → FRDs, reviewed through product + technical lenses
-3. **Prototype** — interactive HTML wireframes you browse and approve in your browser
-4. **Test-first** — Gherkin scenarios + Playwright e2e + Vitest unit tests, all failing (red baseline)
-5. **Contracts** — API specs, shared TypeScript types, and infra requirements generated from specs
-6. **Implement** — agents write code to make tests green (API slice → Web slice → Integration)
-7. **Ship** — `azd up` deploys to Azure Container Apps; smoke tests verify production
-
-## Quick Start
-
-```bash
-# Create your repo from this template
-gh repo create my-app --template EmeaAppGbb/shell-typescript
-cd my-app && npm install
-cd src/web && npm install && cd ../..
-cd src/api && npm install && cd ../..
-
-# Run locally (Aspire recommended)
-npm run dev:aspire        # API + Web + Docs with service discovery
-
-# Write your PRD and let agents take over
-code specs/prd.md
-
-# Deploy to Azure
-azd auth login && azd up
-```
-
-## This Shell's Tech Stack
+## Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Frontend | Next.js · TypeScript · App Router · Tailwind CSS |
-| Backend | Express.js · TypeScript · Node.js |
-| Testing | Playwright (e2e) · Cucumber.js (BDD) · Vitest + Supertest (unit) |
-| Docs | MkDocs Material — auto-generated from wireframes + Gherkin + screenshots |
-| Local orchestration | .NET Aspire (service discovery & dashboard) |
+| --- | --- |
+| Frontend | Next.js, React, TypeScript |
+| Backend | Express.js, TypeScript |
+| AI/audio | Azure OpenAI, Azure AI Speech, or mock provider |
+| Testing | Playwright, Cucumber.js, Vitest, Supertest |
 | Deployment | Azure Container Apps via Azure Developer CLI (`azd`) |
-| AI research | Microsoft Learn · Context7 · DeepWiki · Azure Best Practices MCP |
+| Local orchestration | Aspire |
 
-## Key Commands
+## Getting started
 
-| Command | What it does |
-|---------|-------------|
-| `npm run dev:aspire` | Run all services with Aspire |
-| `npm run dev:all` | API + Web + Docs concurrently |
-| `npm run test:all` | Unit + BDD + e2e tests |
-| `npm run build:all` | Production build (API + Web) |
-| `npm run docs:full` | Capture screenshots + generate docs |
-| `azd up` | Provision + deploy to Azure |
+Install dependencies:
 
-## Learn More
+```bash
+npm install
+cd src/web && npm install && cd ../..
+cd src/api && npm install && cd ../..
+```
 
-| Start Here | Then Explore | Go Deeper |
-|-----------|-------------|-----------|
-| [Quick Start](docs/quickstart.md) | [Greenfield Guide](docs/greenfield.md) | [Skills Catalog](docs/skills.md) |
-| [Core Concepts](docs/concepts.md) | [Brownfield Guide](docs/brownfield.md) | [State & Gates](docs/state-and-gates.md) |
-| [Microhack](docs/microhack.md) | [Examples](docs/examples/) | [Architecture](docs/architecture.md) |
+Run the full app locally:
 
-## Extending
+```bash
+npm run dev:aspire
+```
 
-- **Skills** (`.github/skills/`) — 43 specialized agent procedures following the [agentskills.io](https://agentskills.io) standard
-- **Orchestrator** (`AGENTS.md`) — the central loop; modify phases, gates, or add new ones
-- **Other shells** — swap Next.js/Express for any framework; see [available shells](docs/shells.md)
-- **Community skills** — discover and publish skills at [skills.sh](https://skills.sh/)
+Or run the web app and API without Aspire:
 
-## Contributing
+```bash
+npm run dev:all
+```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. Please read our [Code of Conduct](CODE_OF_CONDUCT.md).
+After the app is running:
 
-## Security
+1. Register a user or sign in.
+2. Open `/podcasts`.
+3. Enter a topic such as `History of Boeing`.
+4. Generate an episode and play it in the browser.
 
-To report vulnerabilities, see [SECURITY.md](SECURITY.md).
+## Azure AI configuration
+
+If no Azure podcast configuration is present, the API uses a mock provider so the end-to-end flow still works locally.
+
+To use Azure-backed generation, configure:
+
+```text
+PODCAST_PROVIDER=azure
+AZURE_OPENAI_ENDPOINT=
+AZURE_OPENAI_DEPLOYMENT_NAME=
+AZURE_SPEECH_REGION=
+```
+
+Then choose one of these auth modes:
+
+**API keys**
+
+```text
+AZURE_OPENAI_API_KEY=
+AZURE_SPEECH_KEY=
+```
+
+**Managed identity**
+
+```text
+AZURE_SPEECH_RESOURCE_ID=
+```
+
+Optional settings:
+
+```text
+AZURE_OPENAI_API_VERSION=2024-10-21
+PODCAST_HOST_VOICE=en-US-JennyNeural
+PODCAST_GUEST_VOICE=en-US-GuyNeural
+```
+
+## Useful commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm run dev:aspire` | Start the web app and API with Aspire |
+| `npm run dev:all` | Run web, API, and docs concurrently |
+| `npm run build:all` | Build the API and web app |
+| `npm run test:api` | Run API unit tests |
+| `npm run test:cucumber` | Run Cucumber tests |
+| `npm run test:e2e` | Run Playwright tests |
+| `npm run test:all` | Run the full test suite |
+| `azd up` | Provision and deploy to Azure |
+
+## Project layout
+
+```text
+src/web/      Next.js frontend
+src/api/      Express API
+src/shared/   Shared types
+e2e/          Playwright tests
+tests/        Cucumber tests
+infra/        Azure infrastructure and deployment scripts
+docs/         Project documentation
+```
+
+## Deployment
+
+This repo includes Azure deployment assets for Container Apps.
+
+```bash
+azd auth login
+azd up
+```
+
+If you want Azure-backed podcast generation after deployment, make sure the API container app receives the Azure OpenAI and Azure Speech settings expected by the backend.
 
 ## License
 
 [ISC](LICENSE)
-
----
-
-**From idea to production — spec-driven, AI-powered, human-approved.**
