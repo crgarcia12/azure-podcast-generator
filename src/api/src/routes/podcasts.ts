@@ -32,6 +32,18 @@ interface PodcastEpisodeResponse {
 }
 
 export function mapPodcastEndpoints(app: Express, podcastService: PodcastService): void {
+  app.get('/api/podcasts', authMiddleware, async (req, res) => {
+    try {
+      const episodes = await podcastService.listEpisodes({ ownerId: req.user!.sub });
+      res.json({
+        episodes: episodes.map((ep) => toEpisodeResponse(ep)),
+      });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to list episodes');
+      res.status(500).json({ error: 'Unable to load episodes right now' });
+    }
+  });
+
   app.post('/api/podcasts', authMiddleware, async (req, res) => {
     const topic = parseTopic(req.body as CreatePodcastBody);
     if (!topic) {

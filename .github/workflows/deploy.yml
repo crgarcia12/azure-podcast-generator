@@ -92,7 +92,14 @@ jobs:
           api_app_name="$(azd env get-value SERVICE_API_NAME 2>/dev/null)"
           web_url="$(azd env get-value REACT_APP_WEB_BASE_URL 2>/dev/null || true)"
 
-          env_vars=("COOKIE_SECURE=true" "PODCAST_PROVIDER=mock")
+          env_vars=("COOKIE_SECURE=true" "PODCAST_PROVIDER=azure")
+          env_vars+=("AZURE_OPENAI_ENDPOINT=https://freshbite-openai-dev.openai.azure.com/")
+          env_vars+=("AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o")
+          env_vars+=("AZURE_SPEECH_REGION=westus3")
+          env_vars+=("AZURE_SPEECH_RESOURCE_ID=/subscriptions/ac866176-3fcf-43c6-817a-6309be256398/resourceGroups/crgar-ai-rg/providers/Microsoft.CognitiveServices/accounts/crgar-podcast-speech")
+          env_vars+=("SEED_ADMIN_USERNAME=admin")
+          env_vars+=("SEED_ADMIN_PASSWORD=PodCraft2026!")
+          env_vars+=("REGISTRATION_ENABLED=false")
           if [[ -n "${web_url}" ]]; then
             env_vars+=("ALLOWED_ORIGINS=${web_url}")
           fi

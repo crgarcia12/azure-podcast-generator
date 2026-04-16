@@ -31,6 +31,12 @@ export function getPodcastEpisodeById(episodeId: string): StoredPodcastEpisode |
   return episodes.get(episodeId);
 }
 
+export function getEpisodesByOwner(ownerId: string): StoredPodcastEpisode[] {
+  return Array.from(episodes.values())
+    .filter((ep) => ep.ownerId === ownerId)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+}
+
 export function clearPodcastEpisodes(): void {
   episodes.clear();
 }

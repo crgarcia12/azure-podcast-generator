@@ -25,7 +25,7 @@ function LoginForm() {
       });
 
       if (res.ok) {
-        router.push('/profile');
+        router.push('/podcasts');
       } else {
         const data = await res.json().catch(() => ({}));
         setError(data.error || 'Invalid username or password');
@@ -37,16 +37,19 @@ function LoginForm() {
 
   return (
     <div className="w-full max-w-md space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Log in</h1>
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-gray-900">Welcome back</h1>
+        <p className="mt-1 text-sm text-gray-500">Sign in to your PodCraft account</p>
+      </div>
 
       {registered && (
-        <p className="rounded bg-green-50 p-3 text-green-800">
-          Registration successful. Please log in.
+        <p className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
+          Account created! Please sign in.
         </p>
       )}
 
       {error && (
-        <p className="rounded bg-red-50 p-3 text-red-800">{error}</p>
+        <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>
       )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -59,7 +62,7 @@ function LoginForm() {
             type="text"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-gray-900"
+            className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
             required
           />
         </div>
@@ -72,31 +75,24 @@ function LoginForm() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="mt-1 block w-full rounded border border-gray-300 px-3 py-2 text-gray-900"
+            className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
             required
           />
         </div>
         <button
           type="submit"
-          className="w-full rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+          className="w-full rounded-xl bg-violet-600 px-4 py-2.5 font-semibold text-white transition hover:bg-violet-700"
         >
-          Log in
+          Sign in
         </button>
       </form>
-
-      <p className="text-center text-sm text-gray-600">
-        Don&apos;t have an account?{' '}
-        <Link href="/register" className="text-blue-600 hover:underline">
-          Register
-        </Link>
-      </p>
     </div>
   );
 }
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-[80vh] items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center px-4">
       <Suspense>
         <LoginForm />
       </Suspense>

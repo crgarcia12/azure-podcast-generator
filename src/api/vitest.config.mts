@@ -10,6 +10,7 @@ export default defineConfig({
     env: {
       JWT_SECRET: 'test-jwt-secret-for-vitest',
       LOG_LEVEL: 'silent',
+      REGISTRATION_ENABLED: 'true',
     },
     coverage: {
       provider: 'v8',

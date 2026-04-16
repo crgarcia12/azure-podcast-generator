@@ -47,8 +47,22 @@ const getAuthClearCookieOptions = (req: Request) => ({
 
 const USERNAME_REGEX = /^[a-zA-Z0-9_]{3,30}$/;
 
+function isRegistrationEnabled(): boolean {
+  const value = process.env.REGISTRATION_ENABLED?.trim().toLowerCase();
+  return value === 'true' || value === '1';
+}
+
 export function mapAuthEndpoints(app: Express): void {
+  app.get('/api/auth/registration-status', (_req, res) => {
+    res.json({ enabled: isRegistrationEnabled() });
+  });
+
   app.post('/api/auth/register', async (req, res) => {
+    if (!isRegistrationEnabled()) {
+      res.status(403).json({ error: 'Registration is currently closed. Please contact an administrator.' });
+      return;
+    }
+
     const { username, password } = req.body as { username?: string; password?: string };
 
     // Validate username first

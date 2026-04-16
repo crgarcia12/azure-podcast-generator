@@ -49,26 +49,21 @@ export default function ProfilePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function handleLogout() {
-    await apiFetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
-  }
-
   if (loading) {
     return (
-      <main className="flex min-h-[80vh] items-center justify-center">
-        <p className="text-gray-600">Loading profile…</p>
+      <main className="flex min-h-[calc(100vh-57px)] items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
       </main>
     );
   }
 
   if (error) {
     return (
-      <main className="flex min-h-[80vh] flex-col items-center justify-center gap-4">
-        <p className="text-red-600">Failed to load profile. Please try again.</p>
+      <main className="flex min-h-[calc(100vh-57px)] flex-col items-center justify-center gap-4">
+        <p className="text-red-600">Failed to load profile.</p>
         <button
           onClick={fetchProfile}
-          className="rounded bg-blue-600 px-4 py-2 font-medium text-white hover:bg-blue-700"
+          className="rounded-xl bg-violet-600 px-4 py-2 font-medium text-white hover:bg-violet-700"
         >
           Retry
         </button>
@@ -79,22 +74,24 @@ export default function ProfilePage() {
   if (!user) return null;
 
   return (
-    <main className="flex min-h-[80vh] items-center justify-center px-4">
+    <main className="flex min-h-[calc(100vh-57px)] items-center justify-center px-4">
       <div className="w-full max-w-md space-y-6 text-center">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 text-3xl font-bold text-white">
+          {user.username.charAt(0).toUpperCase()}
+        </div>
         <h1 className="text-2xl font-bold text-gray-900">{user.username}</h1>
-        <span data-testid="role-badge" className="inline-block rounded-full bg-blue-100 px-3 py-1 text-sm font-medium text-blue-800">
+        <span data-testid="role-badge" className="inline-block rounded-full bg-violet-100 px-3 py-1 text-sm font-medium text-violet-700">
           {user.role}
         </span>
-        <p className="text-gray-600">
+        <p className="text-sm text-gray-500">
           Member since {formatDate(user.createdAt)}
         </p>
         <Link
           href="/podcasts"
-          className="inline-flex items-center justify-center rounded-full bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          className="inline-flex items-center gap-2 rounded-full bg-gradient-to-r from-violet-600 to-indigo-600 px-6 py-2.5 text-sm font-bold text-white shadow-md transition hover:from-violet-700 hover:to-indigo-700"
         >
-          Create a podcast
+          🎙 Open Studio
         </Link>
-        <p className="text-sm text-gray-400">Use the Logout button in the navigation bar to sign out.</p>
       </div>
     </main>
   );

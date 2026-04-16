@@ -14,43 +14,79 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="flex min-h-[80vh] flex-col items-center justify-center px-4 text-center">
-      <h1 className="mb-4 text-4xl font-bold text-gray-900">UserAuth</h1>
-      <p className="mb-8 max-w-md text-lg text-gray-600">
-        A simple authentication demo application.
-      </p>
-      {authenticated === true && (
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Link
-            href="/profile"
-            className="rounded bg-blue-600 px-6 py-2.5 font-medium text-white hover:bg-blue-700"
-          >
-            Go to Profile
-          </Link>
-          <Link
-            href="/podcasts"
-            className="rounded border border-blue-600 px-6 py-2.5 font-medium text-blue-600 hover:bg-blue-50"
-          >
-            Create Podcast
-          </Link>
+    <main className="flex min-h-[calc(100vh-57px)] flex-col">
+      {/* Hero */}
+      <section className="relative overflow-hidden bg-gradient-to-br from-violet-600 via-indigo-600 to-blue-700 px-4 py-20 text-center text-white sm:py-28">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxnIGZpbGw9IiNmZmYiIGZpbGwtb3BhY2l0eT0iMC4wNSI+PGNpcmNsZSBjeD0iMzAiIGN5PSIzMCIgcj0iMiIvPjwvZz48L2c+PC9zdmc+')] opacity-50" />
+        <div className="relative mx-auto max-w-3xl">
+          <div className="mb-6 inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium backdrop-blur-sm">
+            <span className="text-lg">🎙</span>
+            Powered by Azure AI
+          </div>
+          <h1 className="text-4xl font-extrabold tracking-tight sm:text-5xl lg:text-6xl">
+            Turn any topic into a
+            <span className="block bg-gradient-to-r from-amber-200 to-yellow-100 bg-clip-text text-transparent">
+              podcast episode
+            </span>
+          </h1>
+          <p className="mx-auto mt-6 max-w-xl text-lg leading-relaxed text-indigo-100">
+            Enter a subject, and PodCraft generates an engaging interview-style script
+            with two AI voices — ready to listen in seconds.
+          </p>
+          <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
+            {authenticated === true && (
+              <Link
+                href="/podcasts"
+                className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-indigo-700 shadow-lg transition hover:bg-indigo-50 hover:shadow-xl"
+              >
+                <span>🎧</span> Open Studio
+              </Link>
+            )}
+            {authenticated === false && (
+              <Link
+                href="/login"
+                className="inline-flex items-center gap-2 rounded-full bg-white px-8 py-3.5 text-sm font-bold text-indigo-700 shadow-lg transition hover:bg-indigo-50 hover:shadow-xl"
+              >
+                Sign in to start
+              </Link>
+            )}
+          </div>
         </div>
-      )}
-      {authenticated === false && (
-        <div className="flex gap-4">
-          <Link
-            href="/login"
-            className="rounded bg-blue-600 px-6 py-2.5 font-medium text-white hover:bg-blue-700"
-          >
-            Login
-          </Link>
-          <Link
-            href="/register"
-            className="rounded border border-blue-600 px-6 py-2.5 font-medium text-blue-600 hover:bg-blue-50"
-          >
-            Register
-          </Link>
+      </section>
+
+      {/* Features */}
+      <section className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-16 sm:grid-cols-3 sm:px-6">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 text-2xl">
+            ✍️
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">AI-Written Scripts</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+            GPT-4o writes natural host-and-guest dialogue with narrative arc,
+            expert insights, and conversational flow.
+          </p>
         </div>
-      )}
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-2xl">
+            🗣️
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Natural Speech</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+            Azure Speech synthesizes the script with two distinct voices,
+            creating a realistic podcast listening experience.
+          </p>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-2xl">
+            📱
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900">Listen Anywhere</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+            Mobile-first design — generate and listen on the go.
+            Download episodes to keep them forever.
+          </p>
+        </div>
+      </section>
     </main>
   );
 }

@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "UserAuth",
-  description: "A secure user authentication demo application.",
+  title: "PodCraft — AI Podcast Generator",
+  description: "Turn any topic into an engaging interview-style podcast episode with AI-generated scripts and natural speech synthesis.",
 };
 
 export default function RootLayout({

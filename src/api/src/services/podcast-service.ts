@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import { DefaultAzureCredential } from '@azure/identity';
 import {
   getPodcastEpisodeById,
+  getEpisodesByOwner,
   savePodcastEpisode,
   type PodcastEpisodeDraft,
   type StoredPodcastEpisode,
@@ -65,9 +66,14 @@ interface RawGeneratedPodcastScript {
   turns?: unknown;
 }
 
+interface PodcastListInput {
+  ownerId: string;
+}
+
 export interface PodcastService {
   createEpisode(input: CreatePodcastInput): Promise<StoredPodcastEpisode>;
   getEpisodeById(input: PodcastLookupInput): Promise<StoredPodcastEpisode | null>;
+  listEpisodes(input: PodcastListInput): Promise<StoredPodcastEpisode[]>;
 }
 
 export class PodcastConfigurationError extends Error {}
@@ -128,6 +134,9 @@ function createMockPodcastService(): PodcastService {
     async getEpisodeById({ episodeId, ownerId }: PodcastLookupInput): Promise<StoredPodcastEpisode | null> {
       return getOwnedEpisode(episodeId, ownerId);
     },
+    async listEpisodes({ ownerId }: PodcastListInput): Promise<StoredPodcastEpisode[]> {
+      return getEpisodesByOwner(ownerId);
+    },
   };
 }
 
@@ -164,6 +173,9 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
     async getEpisodeById({ episodeId, ownerId }: PodcastLookupInput): Promise<StoredPodcastEpisode | null> {
       return getOwnedEpisode(episodeId, ownerId);
     },
+    async listEpisodes({ ownerId }: PodcastListInput): Promise<StoredPodcastEpisode[]> {
+      return getEpisodesByOwner(ownerId);
+    },
   };
 }
 
@@ -174,6 +186,9 @@ function createUnavailablePodcastService(error: PodcastConfigurationError): Podc
     },
     async getEpisodeById(): Promise<StoredPodcastEpisode | null> {
       return null;
+    },
+    async listEpisodes(): Promise<StoredPodcastEpisode[]> {
+      return [];
     },
   };
 }
@@ -317,16 +332,27 @@ async function generateScriptWithAzure(
         messages: [
           {
             role: 'system',
-            content:
-              'You write short, engaging, factual interview-style podcast scripts. Return only valid JSON with keys "title", "summary", and "turns". The "turns" value must be an array of 6 items, alternating host and guest, with each item containing "speaker" and "text". Keep each turn to 1-3 sentences. Do not wrap the response in markdown fences.',
+            content: `You are a professional podcast script writer who creates engaging, natural-sounding interview-style podcast episodes. Your scripts should feel like a real conversation between a knowledgeable host and an expert guest.
+
+Rules:
+- Return ONLY valid JSON with keys "title", "summary", and "turns"
+- "title": a catchy, specific episode title (not generic)
+- "summary": 2-3 sentence compelling episode description
+- "turns": array of 10-12 items alternating host and guest
+- Each turn has "speaker" ("host" or "guest") and "text" (2-4 natural sentences)
+- The host asks probing questions, sets context, and guides the conversation
+- The guest provides expert insights, anecdotes, and specific examples
+- Include natural conversational elements: reactions, follow-ups, occasional humor
+- Build narrative arc: hook → context → deep dive → surprising insight → takeaway
+- Do NOT wrap the response in markdown fences or add any text outside the JSON`,
           },
           {
             role: 'user',
-            content: `Create a podcast script about: ${topic}`,
+            content: `Create a podcast episode script about: ${topic}`,
           },
         ],
-        temperature: 0.7,
-        max_tokens: 1200,
+        temperature: 0.8,
+        max_tokens: 3000,
       }),
     },
   );
@@ -460,7 +486,7 @@ function normaliseGeneratedScript(
       };
     })
     .filter((turn): turn is NonNullable<typeof turn> => turn !== null)
-    .slice(0, 8);
+    .slice(0, 14);
 
   if (turns.length < 4) {
     throw new PodcastDependencyError('Azure OpenAI returned too few valid turns for the podcast.');
