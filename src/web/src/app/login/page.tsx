@@ -44,7 +44,7 @@ function LoginForm() {
 
       {registered && (
         <p className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-700">
-          Account created! Please sign in.
+          Registration successful. Please log in.
         </p>
       )}
 
@@ -83,7 +83,7 @@ function LoginForm() {
           type="submit"
           className="w-full rounded-xl bg-violet-600 px-4 py-2.5 font-semibold text-white transition hover:bg-violet-700"
         >
-          Sign in
+          Log in
         </button>
       </form>
     </div>

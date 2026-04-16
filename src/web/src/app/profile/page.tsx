@@ -52,7 +52,7 @@ export default function ProfilePage() {
   if (loading) {
     return (
       <main className="flex min-h-[calc(100vh-57px)] items-center justify-center">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
+        <p className="text-gray-500">Loading profile…</p>
       </main>
     );
   }
@@ -92,6 +92,15 @@ export default function ProfilePage() {
         >
           🎙 Open Studio
         </Link>
+        <button
+          onClick={async () => {
+            await apiFetch('/api/auth/logout', { method: 'POST' });
+            router.push('/login');
+          }}
+          className="block w-full rounded-xl border border-gray-200 px-4 py-2.5 text-sm font-medium text-gray-600 transition hover:bg-gray-50"
+        >
+          Logout
+        </button>
       </div>
     </main>
   );

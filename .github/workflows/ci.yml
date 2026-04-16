@@ -47,7 +47,7 @@ jobs:
       - name: Start API
         run: |
           cd src/api
-          JWT_SECRET=ci-jwt-secret COOKIE_SECURE=false npm run dev > ../../api.log 2>&1 &
+          JWT_SECRET=ci-jwt-secret COOKIE_SECURE=false REGISTRATION_ENABLED=true npm run dev > ../../api.log 2>&1 &
           echo $! > ../../api.pid
 
       - name: Start web
