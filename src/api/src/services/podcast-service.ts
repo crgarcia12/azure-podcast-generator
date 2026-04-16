@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { DefaultAzureCredential } from '@azure/identity';
+import { logger } from '../logger.js';
 import {
   getPodcastEpisodeById,
   getEpisodesByOwner,
@@ -155,7 +156,7 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
         const episode: StoredPodcastEpisode = {
           ...draftEpisode,
           audioBuffer,
-          audioContentType: 'audio/wav',
+          audioContentType: 'audio/mpeg',
         };
         savePodcastEpisode(episode);
         return episode;
@@ -397,6 +398,10 @@ async function synthesizeAudioWithAzure(
 
   if (!response.ok) {
     const responseBody = await response.text();
+    logger.error(
+      { status: response.status, body: responseBody.slice(0, 500), region: config.speechRegion },
+      'Azure Speech synthesis failed',
+    );
     throw new PodcastDependencyError(
       `Speech synthesis failed with Azure Speech (${response.status}). ${responseBody.slice(0, 200)}`,
     );
@@ -423,7 +428,7 @@ async function getAzureSpeechHeaders(config: AzurePodcastConfig): Promise<Record
   const headers: Record<string, string> = {
     'Content-Type': 'application/ssml+xml',
     'User-Agent': 'azure-podcast-generator',
-    'X-Microsoft-OutputFormat': 'riff-16khz-16bit-mono-pcm',
+    'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
   };
 
   if (config.authMode === 'api-key') {
@@ -432,7 +437,7 @@ async function getAzureSpeechHeaders(config: AzurePodcastConfig): Promise<Record
   }
 
   const aadToken = await getAzureAccessToken();
-  headers.Authorization = `Bearer aad#${config.speechResourceId}#${aadToken}`;
+  headers.Authorization = `Bearer ${aadToken}`;
   return headers;
 }
 
@@ -507,13 +512,14 @@ function extractJsonObject(rawContent: string): string {
 
 function buildSpeechSsml(episode: PodcastEpisodeDraft): string {
   const segments = episode.transcript
-    .map((turn) => {
+    .map((turn, index) => {
       const escapedText = escapeXml(turn.text);
-      return `<voice name="${turn.voice}"><prosody rate="0%">${escapedText}</prosody></voice>`;
+      const pause = index > 0 ? '<break time="400ms"/>' : '';
+      return `<voice name="${turn.voice}">${pause}<prosody rate="0%">${escapedText}</prosody></voice>`;
     })
-    .join('<break time="400ms"/>');
+    .join('');
 
-  return `<speak version="1.0" xml:lang="en-US">${segments}</speak>`;
+  return `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="en-US">${segments}</speak>`;
 }
 
 function escapeXml(text: string): string {
