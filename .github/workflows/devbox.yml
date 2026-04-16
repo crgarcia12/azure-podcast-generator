@@ -1,0 +1,75 @@
+name: Deploy Devbox
+
+# Manual-only. Fully independent of the app deploy pipeline.
+# Shares only the existing Container Apps Environment + ACR; nothing else.
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_CLIENT_ID: "03c67cc0-a116-4474-b4ad-4da80cf78a3a"
+  AZURE_TENANT_ID: "f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3"
+  AZURE_SUBSCRIPTION_ID: "ac866176-3fcf-43c6-817a-6309be256398"
+  AZURE_RESOURCE_GROUP: "crgar-podcast-rg"
+  CONTAINER_APPS_ENVIRONMENT_NAME: "crgar-podcast-acae"
+  CONTAINER_REGISTRY_NAME: "crgarpodcastacr"
+  DEVBOX_CONTAINER_APP_NAME: "crgar-podcast-devbox"
+  DEVBOX_IDENTITY_NAME: "crgar-podcast-devbox-mi"
+  IMAGE_REPOSITORY: "devbox"
+
+jobs:
+  deploy-devbox:
+    name: Build & Deploy Devbox
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in with Azure CLI (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ env.AZURE_CLIENT_ID }}
+          tenant-id: ${{ env.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build image in ACR (no local Docker needed)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_SHA::7}-$(date -u +%Y%m%d%H%M%S)"
+          IMAGE="${CONTAINER_REGISTRY_NAME}.azurecr.io/${IMAGE_REPOSITORY}:${TAG}"
+          echo "TAG=${TAG}" >> "${GITHUB_ENV}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+          az acr build \
+            --registry "${CONTAINER_REGISTRY_NAME}" \
+            --image "${IMAGE_REPOSITORY}:${TAG}" \
+            --image "${IMAGE_REPOSITORY}:latest" \
+            --file .devbox/Dockerfile \
+            .devbox
+
+      - name: Deploy devbox Container App (Bicep)
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group create \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --template-file .devbox/infra/devbox.bicep \
+            --parameters \
+              containerAppsEnvironmentName="${CONTAINER_APPS_ENVIRONMENT_NAME}" \
+              containerRegistryName="${CONTAINER_REGISTRY_NAME}" \
+              devboxContainerAppName="${DEVBOX_CONTAINER_APP_NAME}" \
+              devboxIdentityName="${DEVBOX_IDENTITY_NAME}" \
+              devboxImage="${IMAGE}" \
+            --only-show-errors
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "Devbox deployed: ${DEVBOX_CONTAINER_APP_NAME}"
+          echo "Image: ${IMAGE}"
+          echo ""
+          echo "Connect locally:"
+          echo "  az containerapp exec -n ${DEVBOX_CONTAINER_APP_NAME} -g ${AZURE_RESOURCE_GROUP} --command bash"
