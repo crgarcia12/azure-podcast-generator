@@ -27,7 +27,7 @@ Feature: Authentication
     Given I am on the "/register" page
     When I fill in "Username" with "jane_doe"
     And I fill in "Password" with "secureP@ss1"
-    And I click the "Register" button
+    And I click the "Create account" button
     Then I should be redirected to "/login?registered=true"
     And I should see the message "Registration successful. Please log in."
 
@@ -102,7 +102,7 @@ Feature: Authentication
     When I fill in "Username" with "jane_doe"
     And I fill in "Password" with "secureP@ss1"
     And I click the "Log in" button
-    Then I should be redirected to "/profile"
+    Then I should be redirected to "/podcasts"
 
   # ──────────────────────────────────────────────
   # Login — Invalid Credentials

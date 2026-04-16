@@ -1,6 +1,6 @@
 @profile
 Feature: Profile page, navigation bar, and landing page
-  As a user of the UserAuth application
+  As a user of the PodCraft application
   I want to view my profile, see role-appropriate navigation, and access the landing page
   So that I can manage my account and navigate the app based on my authentication state
 
@@ -65,43 +65,40 @@ Feature: Profile page, navigation bar, and landing page
   # ──────────────────────────────────────────────
 
   @navigation
-  Scenario: NavBar shows Login and Register links for guest users
+  Scenario: NavBar shows Sign in link for guest users
     Given I am not authenticated
     When I visit the "/" page
-    Then the NavBar should display the app name "UserAuth" linking to "/"
-    And the NavBar should display a "Login" link to "/login"
-    And the NavBar should display a "Register" link to "/register"
+    Then the NavBar should display the app name "PodCraft" linking to "/"
+    And the NavBar should display a "Sign in" link to "/login"
     And the NavBar should not display a "Profile" link
-    And the NavBar should not display a "Logout" button
+    And the NavBar should not display a "Sign out" button
 
   @navigation
-  Scenario: NavBar shows Profile and Logout for authenticated user role
+  Scenario: NavBar shows Profile and Sign out for authenticated user role
     Given I am logged in as a user with username "janedoe" and role "user" created at "2025-01-15T08:30:00.000Z"
     When I visit the "/" page
-    Then the NavBar should display the app name "UserAuth" linking to "/"
+    Then the NavBar should display the app name "PodCraft" linking to "/"
     And the NavBar should display a "Profile" link to "/profile"
-    And the NavBar should display a "Logout" button
-    And the NavBar should not display a "Login" link
-    And the NavBar should not display a "Register" link
+    And the NavBar should display a "Sign out" button
+    And the NavBar should not display a "Sign in" link
     And the NavBar should not display an "Admin" link
 
   @navigation
-  Scenario: NavBar shows Profile, Admin, and Logout for authenticated admin role
+  Scenario: NavBar shows Profile, Admin, and Sign out for authenticated admin role
     Given I am logged in as a user with username "adminuser" and role "admin" created at "2024-06-01T12:00:00.000Z"
     When I visit the "/" page
-    Then the NavBar should display the app name "UserAuth" linking to "/"
+    Then the NavBar should display the app name "PodCraft" linking to "/"
     And the NavBar should display a "Profile" link to "/profile"
     And the NavBar should display an "Admin" link to "/admin"
-    And the NavBar should display a "Logout" button
-    And the NavBar should not display a "Login" link
-    And the NavBar should not display a "Register" link
+    And the NavBar should display a "Sign out" button
+    And the NavBar should not display a "Sign in" link
 
   @navigation
   Scenario: NavBar shows only the app name while auth check is in flight
     Given the API response for "/api/auth/me" is delayed
     When I visit the "/" page
-    Then the NavBar should display the app name "UserAuth" linking to "/"
-    And the NavBar should not display a "Login" link
+    Then the NavBar should display the app name "PodCraft" linking to "/"
+    And the NavBar should not display a "Sign in" link
     And the NavBar should not display a "Profile" link
 
   # ──────────────────────────────────────────────
@@ -109,33 +106,31 @@ Feature: Profile page, navigation bar, and landing page
   # ──────────────────────────────────────────────
 
   @landing
-  Scenario: Guest user sees Login and Register CTAs on the landing page
+  Scenario: Guest user sees Sign in CTA on the landing page
     Given I am not authenticated
     When I visit the "/" page
-    Then I should see the heading "UserAuth"
-    And I should see the text "A simple authentication demo application."
-    And I should see a "Login" link to "/login"
-    And I should see a "Register" link to "/register"
-    And I should not see a "Go to Profile" link
+    Then I should see the heading "Turn any topic into a podcast episode"
+    And I should see the text "PodCraft generates an engaging interview-style script"
+    And I should see a "Sign in to start" link to "/login"
+    And I should not see a "Open Studio" link
 
   @landing
-  Scenario: Authenticated user sees Go to Profile CTA on the landing page
+  Scenario: Authenticated user sees Open Studio CTA on the landing page
     Given I am logged in as a user with username "janedoe" and role "user" created at "2025-01-15T08:30:00.000Z"
     When I visit the "/" page
-    Then I should see the heading "UserAuth"
-    And I should see the text "A simple authentication demo application."
-    And I should see a "Go to Profile" link to "/profile"
-    And I should not see a "Login" link
-    And I should not see a "Register" link
+    Then I should see the heading "Turn any topic into a podcast episode"
+    And I should see the text "PodCraft generates an engaging interview-style script"
+    And I should see a "Open Studio" link to "/podcasts"
+    And I should not see a "Sign in to start" link
 
   @landing
   Scenario: Landing page shows heading and description but no CTAs while loading
     Given the API response for "/api/auth/me" is delayed
     When I visit the "/" page
-    Then I should see the heading "UserAuth"
-    And I should see the text "A simple authentication demo application."
-    And I should not see a "Login" link
-    And I should not see a "Go to Profile" link
+    Then I should see the heading "Turn any topic into a podcast episode"
+    And I should see the text "PodCraft generates an engaging interview-style script"
+    And I should not see a "Sign in to start" link
+    And I should not see a "Open Studio" link
 
   # ──────────────────────────────────────────────
   # Edge Cases
@@ -164,13 +159,12 @@ Feature: Profile page, navigation bar, and landing page
     Given I am logged in as a user with username "janedoe" and role "user" created at "2025-01-15T08:30:00.000Z"
     And the API at "/api/auth/me" is unreachable
     When I visit the "/profile" page
-    Then I should see the text "Failed to load profile. Please try again."
+    Then I should see the text "Failed to load profile."
     And I should see a "Retry" button
 
   @navigation @profile
   Scenario: NavBar falls back to guest state when API is unreachable
     Given the API at "/api/auth/me" is unreachable
     When I visit the "/" page
-    Then the NavBar should display a "Login" link to "/login"
-    And the NavBar should display a "Register" link to "/register"
+    Then the NavBar should display a "Sign in" link to "/login"
     And the NavBar should not display a "Profile" link
