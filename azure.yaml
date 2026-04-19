@@ -11,6 +11,7 @@ services:
     host: aks
     language: ts
     k8s:
+      path: ./manifests-generated
       namespace: azure-podcast-generator
       deployment:
         name: api
@@ -24,6 +25,7 @@ services:
     host: aks
     language: ts
     k8s:
+      path: ./manifests-generated
       namespace: azure-podcast-generator
       deployment:
         name: web

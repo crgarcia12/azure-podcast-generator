@@ -1,6 +1,28 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = "Stop"
 
+$resourceGroup = azd env get-value AZURE_RESOURCE_GROUP 2>$null
+if ($LASTEXITCODE -ne 0) {
+    $resourceGroup = $null
+}
+$clusterName = azd env get-value AKS_CLUSTER_NAME 2>$null
+if ($LASTEXITCODE -ne 0) {
+    $clusterName = $null
+}
+if ($resourceGroup -and $clusterName) {
+    $existingKey = az aks show `
+        --resource-group $resourceGroup `
+        --name $clusterName `
+        --query "linuxProfile.ssh.publicKeys[0].keyData" `
+        --output tsv 2>$null
+    if ($LASTEXITCODE -eq 0 -and $existingKey -and $existingKey -ne "null") {
+        azd env set AKS_SSH_PUBLIC_KEY "$existingKey" | Out-Null
+        azd env config set infra.parameters.aksSshPublicKey "$existingKey" | Out-Null
+        Write-Host "Using AKS_SSH_PUBLIC_KEY from existing cluster."
+        exit 0
+    }
+}
+
 $existingKey = azd env config get infra.parameters.aksSshPublicKey 2>$null
 if ($LASTEXITCODE -ne 0) {
     $existingKey = $null
@@ -12,8 +34,6 @@ if (-not $existingKey) {
     }
 }
 if ($existingKey) {
-    azd env set AKS_SSH_PUBLIC_KEY "$existingKey" | Out-Null
-    azd env config set infra.parameters.aksSshPublicKey "$existingKey" | Out-Null
     Write-Host "AKS_SSH_PUBLIC_KEY already configured."
     exit 0
 }

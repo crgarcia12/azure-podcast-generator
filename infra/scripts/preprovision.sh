@@ -1,6 +1,27 @@
 #!/bin/bash
 set -euo pipefail
 
+if ! resource_group="$(azd env get-value AZURE_RESOURCE_GROUP 2>/dev/null)"; then
+  resource_group=""
+fi
+if ! cluster_name="$(azd env get-value AKS_CLUSTER_NAME 2>/dev/null)"; then
+  cluster_name=""
+fi
+if [[ -n "${resource_group}" && -n "${cluster_name}" ]]; then
+  if existing_key="$(az aks show \
+    --resource-group "${resource_group}" \
+    --name "${cluster_name}" \
+    --query "linuxProfile.ssh.publicKeys[0].keyData" \
+    --output tsv 2>/dev/null)"; then
+    if [[ -n "${existing_key}" && "${existing_key}" != "null" ]]; then
+      azd env set AKS_SSH_PUBLIC_KEY "${existing_key}" >/dev/null
+      azd env config set infra.parameters.aksSshPublicKey "${existing_key}" >/dev/null
+      echo "Using AKS_SSH_PUBLIC_KEY from existing cluster."
+      exit 0
+    fi
+  fi
+fi
+
 if ! existing_key="$(azd env config get infra.parameters.aksSshPublicKey 2>/dev/null)"; then
   existing_key=""
 fi
@@ -10,8 +31,6 @@ if [[ -z "${existing_key}" ]]; then
   fi
 fi
 if [[ -n "${existing_key}" ]]; then
-  azd env set AKS_SSH_PUBLIC_KEY "${existing_key}" >/dev/null
-  azd env config set infra.parameters.aksSshPublicKey "${existing_key}" >/dev/null
   echo "AKS_SSH_PUBLIC_KEY already configured."
   exit 0
 fi

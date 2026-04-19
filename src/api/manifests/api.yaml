@@ -33,9 +33,15 @@ spec:
             - name: PORT
               value: "8080"
             - name: JWT_SECRET
-              value: "${JWT_SECRET}"
+              valueFrom:
+                secretKeyRef:
+                  name: api-config
+                  key: jwt-secret
             - name: APPLICATIONINSIGHTS_CONNECTION_STRING
-              value: "${APPLICATIONINSIGHTS_CONNECTION_STRING}"
+              valueFrom:
+                secretKeyRef:
+                  name: api-config
+                  key: applicationinsights-connection-string
             - name: COOKIE_SECURE
               value: "true"
             - name: REGISTRATION_ENABLED

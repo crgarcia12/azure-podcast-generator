@@ -29,6 +29,8 @@ if [[ -z "${resource_group}" || -z "${cluster_name}" ]]; then
   exit 1
 fi
 
+azd env set AZURE_AKS_CLUSTER_NAME "${cluster_name}" >/dev/null
+
 if [[ -n "${container_registry_name}" ]]; then
   az aks update \
     --resource-group "${resource_group}" \

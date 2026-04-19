@@ -19,6 +19,7 @@ env:
   AZURE_LOCATION: "westus3"
   AZURE_RESOURCE_GROUP: "crgar-podcast-rg"
   AKS_CLUSTER_NAME: "crgar-podcast-aks"
+  AZURE_AKS_CLUSTER_NAME: "crgar-podcast-aks"
   AKS_NODE_RESOURCE_GROUP_NAME: "crgar-podcast-node-rg"
   CONTAINER_REGISTRY_NAME: "crgarpodcastacr"
   LOG_ANALYTICS_WORKSPACE_NAME: "crgar-podcast-law"
@@ -82,6 +83,7 @@ jobs:
           azd env set AZURE_SUBSCRIPTION_ID "${AZURE_SUBSCRIPTION_ID}"
           azd env set AZURE_RESOURCE_GROUP "${AZURE_RESOURCE_GROUP}"
           azd env set AKS_CLUSTER_NAME "${AKS_CLUSTER_NAME}"
+          azd env set AZURE_AKS_CLUSTER_NAME "${AZURE_AKS_CLUSTER_NAME}"
           azd env set AKS_NODE_RESOURCE_GROUP_NAME "${AKS_NODE_RESOURCE_GROUP_NAME}"
           azd env set CONTAINER_REGISTRY_NAME "${CONTAINER_REGISTRY_NAME}"
           azd env set LOG_ANALYTICS_WORKSPACE_NAME "${LOG_ANALYTICS_WORKSPACE_NAME}"
@@ -94,12 +96,24 @@ jobs:
           set -euo pipefail
 
           ssh_key=""
-          for candidate in "$HOME/.ssh/id_rsa.pub" "$HOME/.ssh/id_ed25519.pub"; do
-            if [[ -f "${candidate}" ]]; then
-              ssh_key="$(tr -d '\r\n' < "${candidate}")"
-              break
-            fi
-          done
+          existing_cluster_key="$(az aks show \
+            --resource-group "${AZURE_RESOURCE_GROUP}" \
+            --name "${AKS_CLUSTER_NAME}" \
+            --query "linuxProfile.ssh.publicKeys[0].keyData" \
+            -o tsv 2>/dev/null || true)"
+
+          if [[ -n "${existing_cluster_key}" && "${existing_cluster_key}" != "null" ]]; then
+            ssh_key="${existing_cluster_key}"
+          fi
+
+          if [[ -z "${ssh_key}" ]]; then
+            for candidate in "$HOME/.ssh/id_rsa.pub" "$HOME/.ssh/id_ed25519.pub"; do
+              if [[ -f "${candidate}" ]]; then
+                ssh_key="$(tr -d '\r\n' < "${candidate}")"
+                break
+              fi
+            done
+          fi
 
           if [[ -z "${ssh_key}" ]]; then
             key_path="$HOME/.ssh/azd_aks"

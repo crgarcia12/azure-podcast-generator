@@ -27,6 +27,8 @@ if (-not $resourceGroup -or -not $clusterName) {
     throw "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment."
 }
 
+azd env set AZURE_AKS_CLUSTER_NAME $clusterName | Out-Null
+
 if ($containerRegistryName) {
     az aks update `
         --resource-group $resourceGroup `

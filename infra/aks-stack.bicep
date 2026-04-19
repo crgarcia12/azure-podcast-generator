@@ -129,6 +129,7 @@ resource apiFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdentitie
 
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
 output AKS_CLUSTER_NAME string = aks.name
+output AZURE_AKS_CLUSTER_NAME string = aks.name
 output AKS_NAMESPACE string = aksNamespace
 output AKS_OIDC_ISSUER_URL string = aks.properties.oidcIssuerProfile.issuerURL
 output API_MANAGED_IDENTITY_CLIENT_ID string = apiIdentity.properties.clientId
