@@ -107,7 +107,7 @@ jobs:
             export REGISTRATION_ENABLED="true"
           fi
 
-          ./infra/scripts/configure-api-aks.sh
+          bash ./infra/scripts/configure-api-aks.sh
 
       - name: Capture deployment outputs
         id: capture_outputs

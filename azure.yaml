@@ -35,7 +35,7 @@ hooks:
   preprovision:
     posix:
       shell: sh
-      run: ./infra/scripts/preprovision.sh
+      run: sh ./infra/scripts/preprovision.sh
       continueOnError: false
     windows:
       shell: pwsh
@@ -44,7 +44,7 @@ hooks:
   postprovision:
     posix:
       shell: sh
-      run: ./infra/scripts/postprovision.sh
+      run: sh ./infra/scripts/postprovision.sh
       continueOnError: false
     windows:
       shell: pwsh
@@ -53,7 +53,7 @@ hooks:
   predeploy:
     posix:
       shell: sh
-      run: ./infra/scripts/predeploy.sh
+      run: sh ./infra/scripts/predeploy.sh
       continueOnError: false
     windows:
       shell: pwsh
