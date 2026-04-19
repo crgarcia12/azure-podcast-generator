@@ -88,6 +88,10 @@ jobs:
           azd env set APPLICATION_INSIGHTS_NAME "${APPLICATION_INSIGHTS_NAME}"
           azd env set API_IDENTITY_NAME "${API_IDENTITY_NAME}"
 
+      - name: Ensure AKS SSH key
+        shell: bash
+        run: bash ./infra/scripts/preprovision.sh
+
       - name: Provision infrastructure
         run: azd provision --no-prompt
 

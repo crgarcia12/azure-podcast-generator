@@ -32,15 +32,6 @@ services:
       ingress:
         name: web
 hooks:
-  preprovision:
-    posix:
-      shell: sh
-      run: bash ./infra/scripts/preprovision.sh
-      continueOnError: false
-    windows:
-      shell: pwsh
-      run: ./infra/scripts/preprovision.ps1
-      continueOnError: false
   postprovision:
     posix:
       shell: sh
