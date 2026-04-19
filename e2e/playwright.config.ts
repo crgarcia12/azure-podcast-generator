@@ -14,6 +14,8 @@ export default defineConfig({
   testDir: '.',
   fullyParallel: false,
   forbidOnly: !!process.env.CI,
+  globalSetup: './global-setup.ts',
+  globalTeardown: './global-teardown.ts',
   retries: process.env.CI ? 2 : 0,
   workers: 1,
   reporter: 'html',
@@ -29,12 +31,4 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
   ],
-  webServer: process.env.PLAYWRIGHT_BASE_URL ? undefined : {
-    command: `aspire start --apphost "${appHostPath}" --nologo && aspire wait web --apphost "${appHostPath}" --status healthy --timeout 90 --nologo`,
-    url: 'http://localhost:3001',
-    reuseExistingServer: !process.env.CI,
-    timeout: 120000,
-    stdout: 'pipe',
-    stderr: 'pipe',
-  },
 });

@@ -87,4 +87,4 @@ As a user, I want to delete a task so that I can remove things I no longer need 
 
 ## Success Metric
 
-A developer with no prior knowledge of the codebase can go from this PRD to a live, tested app deployed on Azure Container Apps in under 2 hours.
+A developer with no prior knowledge of the codebase can go from this PRD to a live, tested app deployed on AKS in under 2 hours.

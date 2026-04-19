@@ -18,7 +18,7 @@ Create short, interview-style podcast episodes from a topic. Authenticated users
 | Backend | Express.js, TypeScript |
 | AI/audio | Azure OpenAI, Azure AI Speech, or mock provider |
 | Testing | Playwright, Cucumber.js, Vitest, Supertest |
-| Deployment | Azure Container Apps via Azure Developer CLI (`azd`) |
+| Deployment | Azure Kubernetes Service (AKS) via Azure Developer CLI (`azd`) |
 | Local orchestration | Aspire |
 
 ## Getting started
@@ -113,14 +113,14 @@ docs/         Project documentation
 
 ## Deployment
 
-This repo includes Azure deployment assets for Container Apps.
+This repo includes Azure deployment assets for AKS.
 
 ```bash
 azd auth login
 azd up
 ```
 
-If you want Azure-backed podcast generation after deployment, make sure the API container app receives the Azure OpenAI and Azure Speech settings expected by the backend.
+If you want Azure-backed podcast generation after deployment, make sure the API workload receives the Azure OpenAI and Azure Speech settings expected by the backend.
 
 ## License
 

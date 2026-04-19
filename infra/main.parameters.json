@@ -11,11 +11,14 @@
       "location": {
         "value": "${AZURE_LOCATION}"
       },
-      "apiContainerAppName": {
-        "value": "${API_CONTAINER_APP_NAME}"
+      "aksClusterName": {
+        "value": "${AKS_CLUSTER_NAME}"
       },
-      "containerAppsEnvironmentName": {
-        "value": "${CONTAINER_APPS_ENVIRONMENT_NAME}"
+      "aksNodeResourceGroupName": {
+        "value": "${AKS_NODE_RESOURCE_GROUP_NAME}"
+      },
+      "aksSshPublicKey": {
+        "value": "${AKS_SSH_PUBLIC_KEY}"
       },
       "containerRegistryName": {
         "value": "${CONTAINER_REGISTRY_NAME}"
@@ -28,12 +31,6 @@
       },
       "apiIdentityName": {
         "value": "${API_IDENTITY_NAME}"
-      },
-      "webIdentityName": {
-        "value": "${WEB_IDENTITY_NAME}"
-      },
-      "webContainerAppName": {
-        "value": "${WEB_CONTAINER_APP_NAME}"
       }
     }
 }

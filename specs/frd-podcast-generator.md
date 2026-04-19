@@ -17,7 +17,7 @@ Add a mobile-first podcast generation experience for authenticated users. A user
 - **Existing navigation** — authenticated navigation adds a `Podcasts` entry without removing `Profile`, `Admin`, or `Logout`.
 - **Existing profile page** — profile gains a clear path into the podcast generator experience.
 - **Existing API application** — new podcast endpoints live alongside the current auth/admin routes and reuse the existing structured logging and error-response shape.
-- **Existing Azure deployment** — the API container app gains Azure OpenAI and Azure AI Speech configuration without changing the current deployment topology.
+- **Existing Azure deployment** — the API workload on AKS gains Azure OpenAI and Azure AI Speech configuration without changing the current deployment topology.
 
 ## Acceptance Criteria
 

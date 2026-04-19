@@ -14,24 +14,22 @@ param resourceGroupName string = 'rg-${environmentName}'
 @description('Primary location for all resources')
 param location string
 
-param apiContainerAppName string = ''
-param containerAppsEnvironmentName string = ''
+@description('Public SSH key used for the AKS system node pool.')
+param aksSshPublicKey string
+
+@description('Admin username for AKS Linux nodes.')
+param aksAdminUsername string = 'azureuser'
+
+param aksClusterName string = ''
+param aksNodeResourceGroupName string = ''
 param containerRegistryName string = ''
 param logAnalyticsWorkspaceName string = ''
 param applicationInsightsName string = ''
 param apiIdentityName string = ''
-param webIdentityName string = ''
-param webContainerAppName string = ''
-param webAppExists bool = false
-param apiAppExists bool = false
 
 var tags = {
   'azd-env-name': environmentName
 }
-
-var defaultNamePrefix = toLower(replace(environmentName, '_', '-'))
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
-var defaultContainerRegistryName = take('${replace(defaultNamePrefix, '-', '')}acr${resourceToken}', 50)
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: resourceGroupName
@@ -39,135 +37,34 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-// Monitoring
-module logAnalytics 'core/monitor/loganalytics.bicep' = {
-  name: 'loganalytics'
+module aksStack 'aks-stack.bicep' = {
+  name: 'aks-stack'
   scope: rg
   params: {
-    name: !empty(logAnalyticsWorkspaceName) ? logAnalyticsWorkspaceName : '${defaultNamePrefix}-law'
+    environmentName: environmentName
     location: location
-    tags: tags
+    aksSshPublicKey: aksSshPublicKey
+    aksAdminUsername: aksAdminUsername
+    aksClusterName: aksClusterName
+    aksNodeResourceGroupName: aksNodeResourceGroupName
+    containerRegistryName: containerRegistryName
+    logAnalyticsWorkspaceName: logAnalyticsWorkspaceName
+    applicationInsightsName: applicationInsightsName
+    apiIdentityName: apiIdentityName
   }
 }
 
-module applicationInsights 'core/monitor/applicationinsights.bicep' = {
-  name: 'applicationinsights'
-  scope: rg
-  params: {
-    name: !empty(applicationInsightsName) ? applicationInsightsName : '${defaultNamePrefix}-appi'
-    location: location
-    tags: tags
-    logAnalyticsWorkspaceId: logAnalytics.outputs.id
-  }
-}
-
-// Container apps host (including container registry)
-module containerApps 'br/public:avm/ptn/azd/container-apps-stack:0.1.0' = {
-  name: 'container-apps'
-  scope: rg
-  params: {
-    containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${defaultNamePrefix}-acae'
-    containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : defaultContainerRegistryName
-    logAnalyticsWorkspaceResourceId: logAnalytics.outputs.id
-    appInsightsConnectionString: applicationInsights.outputs.connectionString
-    acrSku: 'Basic'
-    location: location
-    acrAdminUserEnabled: true
-    zoneRedundant: false
-    tags: tags
-  }
-}
-
-// Managed identity for web frontend
-module webIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
-  name: 'webidentity'
-  scope: rg
-  params: {
-    name: !empty(webIdentityName) ? webIdentityName : '${defaultNamePrefix}-web-mi'
-    location: location
-  }
-}
-
-// Web frontend
-module web 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
-  name: 'web-container-app'
-  scope: rg
-  params: {
-    name: !empty(webContainerAppName) ? webContainerAppName : '${defaultNamePrefix}-web'
-    tags: union(tags, { 'azd-service-name': 'web' })
-    location: location
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    ingressEnabled: true
-    identityType: 'UserAssigned'
-    exists: webAppExists
-    containerName: 'main'
-    identityName: webIdentity.name
-    userAssignedIdentityResourceId: webIdentity.outputs.resourceId
-    targetPort: 3000
-    containerMinReplicas: 1
-    identityPrincipalId: webIdentity.outputs.principalId
-  }
-}
-
-// Managed identity for api backend
-module apiIdentity 'br/public:avm/res/managed-identity/user-assigned-identity:0.2.1' = {
-  name: 'apiidentity'
-  scope: rg
-  params: {
-    name: !empty(apiIdentityName) ? apiIdentityName : '${defaultNamePrefix}-api-mi'
-    location: location
-  }
-}
-
-// Api backend
-module api 'br/public:avm/ptn/azd/container-app-upsert:0.1.1' = {
-  name: 'api-container-app'
-  scope: rg
-  params: {
-    name: !empty(apiContainerAppName) ? apiContainerAppName : '${defaultNamePrefix}-api'
-    tags: union(tags, { 'azd-service-name': 'api' })
-    location: location
-    env: [
-      {
-        name: 'AZURE_CLIENT_ID'
-        value: apiIdentity.outputs.clientId
-      }
-      {
-        name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-        value: applicationInsights.outputs.connectionString
-      }
-      {
-        name: 'JWT_SECRET'
-        value: uniqueString(rg.id, resourceToken, 'jwt-secret')
-      }
-    ]
-    containerAppsEnvironmentName: containerApps.outputs.environmentName
-    containerRegistryName: containerApps.outputs.registryName
-    exists: apiAppExists
-    identityType: 'UserAssigned'
-    identityName: apiIdentity.name
-    containerCpuCoreCount: '1.0'
-    containerMemory: '2.0Gi'
-    targetPort: 8080
-    containerMinReplicas: 1
-    ingressEnabled: true
-    containerName: 'main'
-    userAssignedIdentityResourceId: apiIdentity.outputs.resourceId
-    identityPrincipalId: apiIdentity.outputs.principalId
-  }
-}
-
-// App outputs
-output APPLICATIONINSIGHTS_CONNECTION_STRING string = applicationInsights.outputs.connectionString
-output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerApps.outputs.environmentName
-output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerApps.outputs.registryLoginServer
-output AZURE_CONTAINER_REGISTRY_NAME string = containerApps.outputs.registryName
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = aksStack.outputs.APPLICATIONINSIGHTS_CONNECTION_STRING
+output AKS_CLUSTER_NAME string = aksStack.outputs.AKS_CLUSTER_NAME
+output AKS_NAMESPACE string = aksStack.outputs.AKS_NAMESPACE
+output AKS_OIDC_ISSUER_URL string = aksStack.outputs.AKS_OIDC_ISSUER_URL
+output API_MANAGED_IDENTITY_CLIENT_ID string = aksStack.outputs.API_MANAGED_IDENTITY_CLIENT_ID
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = aksStack.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
+output AZURE_CONTAINER_REGISTRY_NAME string = aksStack.outputs.AZURE_CONTAINER_REGISTRY_NAME
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId
-output API_BASE_URL string = api.outputs.uri
-output REACT_APP_WEB_BASE_URL string = web.outputs.uri
-output SERVICE_API_NAME string = api.outputs.name
-output SERVICE_WEB_NAME string = web.outputs.name
+@secure()
+output JWT_SECRET string = aksStack.outputs.JWT_SECRET
+output SERVICE_API_NAME string = 'api'
+output SERVICE_WEB_NAME string = 'web'
 output AZURE_RESOURCE_GROUP string = resourceGroupName
-

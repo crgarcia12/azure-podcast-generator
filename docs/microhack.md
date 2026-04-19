@@ -234,7 +234,7 @@ After each slice the test suite runs. The orchestrator loops until all tests pas
 After all increments are green, the agent runs:
 
 ```bash
-azd provision   # Creates Azure Container Apps, ACR, and monitoring
+azd provision   # Creates AKS, ACR, and monitoring
 azd deploy      # Builds containers and pushes
 ```
 
@@ -263,7 +263,7 @@ Open it and manually verify:
 4. Edit a task title
 5. Delete a task and confirm the prompt appears
 
-> **Bonus:** Open the Azure portal and explore the Container Apps, Container Registry, and Application Insights resources that were provisioned automatically.
+> **Bonus:** Open the Azure portal and explore the AKS cluster, Container Registry, and Application Insights resources that were provisioned automatically.
 
 ---
 
@@ -318,5 +318,5 @@ You wrote zero production code. You wrote a spec — and that spec drove every t
 - [spec2cloud template on GitHub](https://github.com/EmeaAppGbb/shell-typescript)
 - [Sample Task Board PRD](microhack-sample-prd.md) — reference only; write your own
 - [Azure Developer CLI docs](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/)
-- [Azure Container Apps docs](https://learn.microsoft.com/en-us/azure/container-apps/)
+- [Azure Kubernetes Service docs](https://learn.microsoft.com/en-us/azure/aks/)
 - [agentskills.io specification](https://agentskills.io/specification)

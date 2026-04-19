@@ -5,6 +5,10 @@ export function mapHealthEndpoints(app: Express): void {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });
   });
 
+  app.get('/api/health', (_req, res) => {
+    res.json({ status: 'healthy', timestamp: new Date().toISOString() });
+  });
+
   app.get('/api/info', (_req, res) => {
     res.json({ version: '1.0.0', framework: 'spec2cloud' });
   });

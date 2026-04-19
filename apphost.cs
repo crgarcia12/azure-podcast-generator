@@ -7,6 +7,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 // API — Express.js / TypeScript backend
 var api = builder.AddJavaScriptApp("api", "./src/api")
     .WithEnvironment("JWT_SECRET", "aspire-local-dev-jwt-secret")
+    .WithEnvironment("REGISTRATION_ENABLED", "true")
     .WithHttpEndpoint(port: 5001, env: "PORT")
     .WithHttpHealthCheck("/health");
 

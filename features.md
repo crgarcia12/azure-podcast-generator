@@ -30,7 +30,7 @@ Download any episode's audio as a WAV file directly from the browser.
 | Voice Synthesis | Azure Speech TTS with Jenny (host) and Guy (guest) neural voices |
 | Auth | JWT in HTTP-only cookies, seeded admin user, lockable registration |
 | Episode Storage | In-memory (resets on container restart) — sufficient for testing phase |
-| Deployment | Azure Container Apps via GitHub Actions with OIDC auth |
+| Deployment | Azure Kubernetes Service (AKS) via GitHub Actions with OIDC auth |
 
 ## Login Credentials (Testing)
 - **Username:** `admin`

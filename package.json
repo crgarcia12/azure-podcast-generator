@@ -1,7 +1,7 @@
 {
   "name": "nextjs-typescript",
   "version": "1.0.0",
-  "description": "A spec2cloud shell template for building full-stack applications with: - **Frontend**: Next.js (TypeScript, App Router) - **Backend**: Express.js (TypeScript, Node.js) - **Deployment**: Azure Container Apps via AZD - **Testing**: Playwright (e2e) + Cucumber.js (Gherkin) + Vitest (unit)",
+  "description": "A spec2cloud shell template for building full-stack applications with: - **Frontend**: Next.js (TypeScript, App Router) - **Backend**: Express.js (TypeScript, Node.js) - **Deployment**: Azure Kubernetes Service (AKS) via AZD - **Testing**: Playwright (e2e) + Cucumber.js (Gherkin) + Vitest (unit)",
   "main": "index.js",
   "directories": {
     "test": "tests"

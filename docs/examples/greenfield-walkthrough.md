@@ -28,7 +28,7 @@ HTML prototypes generated: board view, card modal, team settings, notification p
 3. Collaboration — Team members, permissions, notifications
 
 ## Phase 1d: Tech Stack
-Researched and documented as ADRs: Next.js 14, Express + Prisma, PostgreSQL on Azure, Container Apps.
+Researched and documented as ADRs: Next.js 14, Express + Prisma, PostgreSQL on Azure, AKS.
 
 🚦 **Human Gate:** Tech stack approved.
 
@@ -43,7 +43,7 @@ Researched and documented as ADRs: Next.js 14, Express + Prisma, PostgreSQL on A
 **Step 2 — Contracts:**
 - OpenAPI: 6 endpoints (boards + cards CRUD)
 - TypeScript types: Board, Card, User DTOs
-- Bicep: Container App + PostgreSQL
+- Bicep: AKS + PostgreSQL
 
 **Step 3 — Implementation:**
 - API + Web slices in parallel

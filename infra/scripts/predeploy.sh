@@ -1,21 +1,20 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
-# Write Vite backend URL for production builds so the SPA calls the real backend.
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-WEB_DIR="$ROOT_DIR/src/web"
-ENV_FILE="$WEB_DIR/.env.production"
+resource_group="$(azd env get-value AZURE_RESOURCE_GROUP 2>/dev/null || true)"
+cluster_name="$(azd env get-value AKS_CLUSTER_NAME 2>/dev/null || true)"
 
-# Load azd environment values
-eval "$(azd env get-values)"
-
-# Try API_BASE_URL first (new infra), fall back to API_URL (legacy)
-RESOLVED_API_URL="${API_BASE_URL:-$API_URL}"
-
-if [ -z "$RESOLVED_API_URL" ]; then
-  echo "Neither API_BASE_URL nor API_URL is set in the azd environment; cannot configure frontend API base" >&2
+if [[ -z "${resource_group}" || -z "${cluster_name}" ]]; then
+  echo "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment." >&2
   exit 1
 fi
 
-echo "NEXT_PUBLIC_API_URL=$RESOLVED_API_URL" > "$ENV_FILE"
-echo "Wrote API URL to $ENV_FILE"
+az aks get-credentials \
+  --resource-group "${resource_group}" \
+  --name "${cluster_name}" \
+  --overwrite-existing \
+  --only-show-errors >/dev/null
+
+rm -f "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/src/web/.env.production"
+
+echo "Connected kubectl context to AKS cluster '${cluster_name}'."

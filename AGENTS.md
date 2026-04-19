@@ -572,8 +572,8 @@ infra/            # Azure Bicep templates
 
 | Command | Purpose |
 |---|---|
-| `azd provision` | Provision Azure resources (Container Apps, ACR, monitoring) |
-| `azd deploy` | Build containers and deploy to Azure Container Apps |
+| `azd provision` | Provision Azure resources (AKS, ACR, monitoring) |
+| `azd deploy` | Build containers and deploy to Azure Kubernetes Service (AKS) |
 | `azd env get-values` | Retrieve deployed URLs |
 | `azd down` | Tear down all resources |
 

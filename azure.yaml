@@ -8,22 +8,48 @@ infra:
 services:
   api:
     project: ./src/api
-    host: containerapp
+    host: aks
     language: ts
+    k8s:
+      namespace: azure-podcast-generator
+      deployment:
+        name: api
+      service:
+        name: api
+      ingress:
+        name: api
+        relativePath: api
   web:
     project: ./src/web
-    host: containerapp
+    host: aks
     language: ts
-resources:
-  api:
-    type: host.containerapp
-    port: 8080
-  web:
-    type: host.containerapp
-    uses:
-      - api
-    port: 3000
+    k8s:
+      namespace: azure-podcast-generator
+      deployment:
+        name: web
+      service:
+        name: web
+      ingress:
+        name: web
 hooks:
+  preprovision:
+    posix:
+      shell: sh
+      run: ./infra/scripts/preprovision.sh
+      continueOnError: false
+    windows:
+      shell: pwsh
+      run: ./infra/scripts/preprovision.ps1
+      continueOnError: false
+  postprovision:
+    posix:
+      shell: sh
+      run: ./infra/scripts/postprovision.sh
+      continueOnError: false
+    windows:
+      shell: pwsh
+      run: ./infra/scripts/postprovision.ps1
+      continueOnError: false
   predeploy:
     posix:
       shell: sh

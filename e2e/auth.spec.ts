@@ -14,7 +14,7 @@ test.describe('Registration', () => {
     const username = uniqueUser();
     await page.getByLabel('Username').fill(username);
     await page.getByLabel('Password').fill('SecurePass123!');
-    await page.getByRole('button', { name: 'Register' }).click();
+    await page.getByRole('button', { name: /create account/i }).click();
 
     await expect(page).toHaveURL(/\/login/);
     await expect(page.getByText(/registration successful/i)).toBeVisible();
@@ -26,7 +26,7 @@ test.describe('Registration', () => {
 
     await page.getByLabel('Username').fill(username);
     await page.getByLabel('Password').fill('SecurePass123!');
-    await page.getByRole('button', { name: 'Register' }).click();
+    await page.getByRole('button', { name: /create account/i }).click();
 
     await expect(page.getByText(/already exists/i)).toBeVisible();
   });
@@ -34,7 +34,7 @@ test.describe('Registration', () => {
   test('should show validation error for invalid username', async ({ page }) => {
     await page.getByLabel('Username').fill('ab');
     await page.getByLabel('Password').fill('SecurePass123!');
-    await page.getByRole('button', { name: 'Register' }).click();
+    await page.getByRole('button', { name: /create account/i }).click();
 
     await expect(page.getByText('Username must be between 3 and 30 characters and contain only letters, numbers, and underscores')).toBeVisible();
   });
@@ -42,13 +42,13 @@ test.describe('Registration', () => {
   test('should show validation error for short password', async ({ page }) => {
     await page.getByLabel('Username').fill(uniqueUser());
     await page.getByLabel('Password').fill('short');
-    await page.getByRole('button', { name: 'Register' }).click();
+    await page.getByRole('button', { name: /create account/i }).click();
 
     await expect(page.getByText('Password must be at least 8 characters')).toBeVisible();
   });
 
   test('should have a link to login page', async ({ page }) => {
-    const loginLink = page.getByRole('link', { name: /log in/i });
+    const loginLink = page.getByRole('link', { name: /sign in/i });
     await expect(loginLink).toBeVisible();
     await loginLink.click();
     await expect(page).toHaveURL(/\/login/);
@@ -60,7 +60,7 @@ test.describe('Login', () => {
     await page.goto('/login');
   });
 
-  test('should login with valid credentials and redirect to profile', async ({ page }) => {
+  test('should login with valid credentials and redirect to the podcast studio', async ({ page }) => {
     const username = uniqueUser();
     const password = 'SecurePass123!';
     await registerUser(page, username, password);
@@ -69,7 +69,8 @@ test.describe('Login', () => {
     await page.getByLabel('Password').fill(password);
     await page.getByRole('button', { name: 'Log in' }).click();
 
-    await expect(page).toHaveURL(/\/profile/);
+    await expect(page).toHaveURL(/\/podcasts/);
+    await expect(page.getByRole('heading', { name: /create a new episode/i })).toBeVisible();
   });
 
   test('should show error for wrong password', async ({ page }) => {
@@ -91,11 +92,9 @@ test.describe('Login', () => {
     await expect(page.getByText('Invalid username or password')).toBeVisible();
   });
 
-  test('should have a link to register page', async ({ page }) => {
-    const registerLink = page.getByRole('link', { name: /register/i });
-    await expect(registerLink).toBeVisible();
-    await registerLink.click();
-    await expect(page).toHaveURL(/\/register/);
+  test('should show PodCraft sign-in copy', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: /welcome back/i })).toBeVisible();
+    await expect(page.getByText(/sign in to your podcraft account/i)).toBeVisible();
   });
 
   test('should show success message when redirected after registration', async ({ page }) => {

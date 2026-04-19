@@ -17,16 +17,32 @@ if (-not (Test-Path $SETTINGS_FILE)) {
     }
 }
 
-# Read environment variables from azd
-$azdEnvOutput = azd env get-values
-$envVars = @{}
-foreach ($line in $azdEnvOutput) {
-    if ($line -match '^([^=]+)=(.*)$') {
-        $envVars[$matches[1]] = $matches[2] -replace '^"?(.*?)"?$', '$1'
-    }
+$resourceGroup = azd env get-value AZURE_RESOURCE_GROUP 2>$null
+$clusterName = azd env get-value AKS_CLUSTER_NAME 2>$null
+$namespaceName = azd env get-value AKS_NAMESPACE 2>$null
+$containerRegistryName = azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>$null
+$containerRegistryEndpoint = azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT 2>$null
+
+if (-not $resourceGroup -or -not $clusterName) {
+    throw "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment."
 }
 
+if ($containerRegistryName) {
+    az aks update `
+        --resource-group $resourceGroup `
+        --name $clusterName `
+        --attach-acr $containerRegistryName `
+        --only-show-errors | Out-Null
+}
+
+az aks get-credentials `
+    --resource-group $resourceGroup `
+    --name $clusterName `
+    --overwrite-existing `
+    --only-show-errors | Out-Null
+
 Write-Host "Provisioning complete!" -ForegroundColor Green
-Write-Host "  - Resource Group: $($envVars['AZURE_RESOURCE_GROUP'])" -ForegroundColor Cyan
-Write-Host "  - AI Project: $($envVars['AZURE_AI_PROJECT_NAME'])" -ForegroundColor Cyan
-Write-Host "  - Container Registry: $($envVars['AZURE_CONTAINER_REGISTRY_ENDPOINT'])" -ForegroundColor Cyan
+Write-Host "  - Resource Group: $resourceGroup" -ForegroundColor Cyan
+Write-Host "  - AKS Cluster: $clusterName" -ForegroundColor Cyan
+Write-Host "  - Namespace: $namespaceName" -ForegroundColor Cyan
+Write-Host "  - Container Registry: $containerRegistryEndpoint" -ForegroundColor Cyan

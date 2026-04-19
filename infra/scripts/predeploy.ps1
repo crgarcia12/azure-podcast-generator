@@ -1,19 +1,23 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = "Stop"
 
-# Write backend URL for production builds so the frontend calls the real API.
+$resourceGroup = azd env get-value AZURE_RESOURCE_GROUP 2>$null
+$clusterName = azd env get-value AKS_CLUSTER_NAME 2>$null
+
+if (-not $resourceGroup -or -not $clusterName) {
+    throw "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment."
+}
+
+az aks get-credentials `
+    --resource-group $resourceGroup `
+    --name $clusterName `
+    --overwrite-existing `
+    --only-show-errors | Out-Null
+
 $rootDir = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
-$webDir = Join-Path $rootDir "src/web"
-$envFile = Join-Path $webDir ".env.production"
-
-# Try API_BASE_URL first (new infra), fall back to API_URL (legacy)
-$apiUrl = azd env get-value API_BASE_URL 2>$null
-if (-not $apiUrl) {
-    $apiUrl = azd env get-value API_URL 2>$null
-}
-if (-not $apiUrl) {
-    Write-Error "Neither API_BASE_URL nor API_URL is set in the azd environment; cannot configure frontend API base"
+$envFile = Join-Path $rootDir "src/web/.env.production"
+if (Test-Path $envFile) {
+    Remove-Item $envFile -Force
 }
 
-"NEXT_PUBLIC_API_URL=$apiUrl" | Set-Content -Path $envFile -NoNewline
-Write-Host "Wrote API URL to $envFile"
+Write-Host "Connected kubectl context to AKS cluster '$clusterName'."

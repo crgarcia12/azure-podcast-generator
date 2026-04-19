@@ -24,7 +24,7 @@
 - **Integration Points:**
   - Reuses `/api/auth/me` and auth cookie protection for new podcast APIs and pages.
   - Extends the authenticated navigation with a `Podcasts` route.
-  - Adds Azure OpenAI and Azure AI Speech configuration to the API container app.
-  - Preserves the existing auth/admin deployment shape in Azure Container Apps.
+  - Adds Azure OpenAI and Azure AI Speech configuration to the API workload on AKS.
+  - Preserves the existing auth/admin deployment shape in Azure Kubernetes Service (AKS).
 - **Dependencies:** none
 - **Rollback Plan:** Remove the new podcast routes, page, navigation entry, and Azure AI configuration, returning the app to the current auth-focused behavior.

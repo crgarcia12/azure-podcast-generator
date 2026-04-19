@@ -16,13 +16,14 @@ test.describe('Podcast Generator', () => {
 
     await page.goto('/podcasts');
 
-    await expect(page.getByRole('heading', { name: /turn a topic into a spoken episode/i })).toBeVisible();
-    await page.getByLabel(/podcast topic/i).fill('History of Boeing');
+    await expect(page.getByRole('heading', { name: /create a new episode/i })).toBeVisible();
+    await page.getByLabel(/what should the episode be about/i).fill('History of Boeing');
     await page.getByRole('button', { name: /generate episode/i }).click();
 
     await expect(page.getByText(/history of boeing/i).first()).toBeVisible();
     await expect(page.getByText(/host/i).first()).toBeVisible();
     await expect(page.getByText(/guest/i).first()).toBeVisible();
-    await expect(page.getByLabel(/podcast audio player/i)).toBeVisible();
+    await expect(page.getByLabel(/podcast audio player/i)).toHaveAttribute('src', /\/api\/podcasts\/.+\/audio/);
+    await expect(page.getByRole('button', { name: /download/i })).toBeVisible();
   });
 });

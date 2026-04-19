@@ -136,4 +136,4 @@ A minimal full-stack web application with user authentication. Users can registe
 - **Backend:** Express.js (TypeScript)
 - **Auth:** JWT (jsonwebtoken), bcrypt
 - **Storage:** In-memory JavaScript Map
-- **Deployment:** Azure Container Apps via AZD
+- **Deployment:** Azure Kubernetes Service (AKS) via AZD

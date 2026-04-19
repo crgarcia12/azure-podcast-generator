@@ -18,14 +18,20 @@ env:
   AZURE_ENV_NAME: "crgar-podcast-prod"
   AZURE_LOCATION: "westus3"
   AZURE_RESOURCE_GROUP: "crgar-podcast-rg"
-  CONTAINER_APPS_ENVIRONMENT_NAME: "crgar-podcast-acae"
+  AKS_CLUSTER_NAME: "crgar-podcast-aks"
+  AKS_NODE_RESOURCE_GROUP_NAME: "crgar-podcast-node-rg"
   CONTAINER_REGISTRY_NAME: "crgarpodcastacr"
-  WEB_CONTAINER_APP_NAME: "crgar-podcast-web"
-  API_CONTAINER_APP_NAME: "crgar-podcast-api"
   LOG_ANALYTICS_WORKSPACE_NAME: "crgar-podcast-law"
   APPLICATION_INSIGHTS_NAME: "crgar-podcast-appi"
   API_IDENTITY_NAME: "crgar-podcast-api-mi"
-  WEB_IDENTITY_NAME: "crgar-podcast-web-mi"
+  SEED_ADMIN_USERNAME: "admin"
+  AZURE_OPENAI_ENDPOINT: "https://freshbite-openai-dev.openai.azure.com/"
+  AZURE_OPENAI_DEPLOYMENT_NAME: "gpt-4o"
+  AZURE_OPENAI_API_VERSION: "2024-10-21"
+  AZURE_SPEECH_REGION: "westus3"
+  AZURE_SPEECH_RESOURCE_ID: "/subscriptions/ac866176-3fcf-43c6-817a-6309be256398/resourceGroups/crgar-ai-rg/providers/Microsoft.CognitiveServices/accounts/crgar-podcast-speech"
+  PODCAST_HOST_VOICE: "en-US-JennyNeural"
+  PODCAST_GUEST_VOICE: "en-US-GuyNeural"
 
 jobs:
   deploy:
@@ -40,7 +46,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: "20"
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
 
       - name: Install azd
         uses: Azure/setup-azd@v2
@@ -63,6 +72,8 @@ jobs:
       - name: Ensure azd environment
         shell: bash
         run: |
+          set -euo pipefail
+
           if ! azd env select "${AZURE_ENV_NAME}" >/dev/null 2>&1; then
             azd env new "${AZURE_ENV_NAME}" --no-prompt
           fi
@@ -70,14 +81,12 @@ jobs:
           azd env set AZURE_LOCATION "${AZURE_LOCATION}"
           azd env set AZURE_SUBSCRIPTION_ID "${AZURE_SUBSCRIPTION_ID}"
           azd env set AZURE_RESOURCE_GROUP "${AZURE_RESOURCE_GROUP}"
-          azd env set CONTAINER_APPS_ENVIRONMENT_NAME "${CONTAINER_APPS_ENVIRONMENT_NAME}"
+          azd env set AKS_CLUSTER_NAME "${AKS_CLUSTER_NAME}"
+          azd env set AKS_NODE_RESOURCE_GROUP_NAME "${AKS_NODE_RESOURCE_GROUP_NAME}"
           azd env set CONTAINER_REGISTRY_NAME "${CONTAINER_REGISTRY_NAME}"
-          azd env set WEB_CONTAINER_APP_NAME "${WEB_CONTAINER_APP_NAME}"
-          azd env set API_CONTAINER_APP_NAME "${API_CONTAINER_APP_NAME}"
           azd env set LOG_ANALYTICS_WORKSPACE_NAME "${LOG_ANALYTICS_WORKSPACE_NAME}"
           azd env set APPLICATION_INSIGHTS_NAME "${APPLICATION_INSIGHTS_NAME}"
           azd env set API_IDENTITY_NAME "${API_IDENTITY_NAME}"
-          azd env set WEB_IDENTITY_NAME "${WEB_IDENTITY_NAME}"
 
       - name: Provision infrastructure
         run: azd provision --no-prompt
@@ -85,64 +94,64 @@ jobs:
       - name: Deploy application
         run: azd deploy --no-prompt
 
-      - name: Configure API container app
+      - name: Configure API deployment
         shell: bash
+        env:
+          SEED_ADMIN_PASSWORD: ${{ secrets.SEED_ADMIN_PASSWORD }}
         run: |
-          resource_group="${AZURE_RESOURCE_GROUP}"
-          api_app_name="$(azd env get-value SERVICE_API_NAME 2>/dev/null)"
-          web_url="$(azd env get-value REACT_APP_WEB_BASE_URL 2>/dev/null || true)"
+          set -euo pipefail
 
-          env_vars=("COOKIE_SECURE=true" "PODCAST_PROVIDER=azure")
-          env_vars+=("AZURE_OPENAI_ENDPOINT=https://freshbite-openai-dev.openai.azure.com/")
-          env_vars+=("AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o")
-          env_vars+=("AZURE_SPEECH_REGION=westus3")
-          env_vars+=("AZURE_SPEECH_RESOURCE_ID=/subscriptions/ac866176-3fcf-43c6-817a-6309be256398/resourceGroups/crgar-ai-rg/providers/Microsoft.CognitiveServices/accounts/crgar-podcast-speech")
-          env_vars+=("SEED_ADMIN_USERNAME=admin")
-          env_vars+=("SEED_ADMIN_PASSWORD=PodCraft2026!")
-          env_vars+=("REGISTRATION_ENABLED=false")
-          if [[ -n "${web_url}" ]]; then
-            env_vars+=("ALLOWED_ORIGINS=${web_url}")
+          if [[ -n "${SEED_ADMIN_PASSWORD:-}" ]]; then
+            export REGISTRATION_ENABLED="false"
+          else
+            export REGISTRATION_ENABLED="true"
           fi
 
-          az containerapp update \
-            --resource-group "${resource_group}" \
-            --name "${api_app_name}" \
-            --set-env-vars "${env_vars[@]}" \
-            --only-show-errors >/dev/null
+          ./infra/scripts/configure-api-aks.sh
 
       - name: Capture deployment outputs
         id: capture_outputs
         shell: bash
         run: |
+          set -euo pipefail
+
+          namespace="$(azd env get-value AKS_NAMESPACE 2>/dev/null || true)"
+          namespace="${namespace:-azure-podcast-generator}"
+
           read_env_value() {
-            local key="$1"
-            local line
-            line="$(azd env get-values | grep -m1 "^${key}=" || true)"
-            if [[ -n "${line}" ]]; then
-              echo "${line#*=}" | sed -e 's/^"//' -e 's/"$//'
-            fi
+            azd env get-value "$1" 2>/dev/null || true
           }
 
-          resolve_container_app_url() {
-            local app_name="$1"
-            local fqdn
-            if [[ -z "${app_name}" ]]; then return 0; fi
-            fqdn="$(az containerapp show \
-              --resource-group "${AZURE_RESOURCE_GROUP}" \
-              --name "${app_name}" \
-              --query "properties.configuration.ingress.fqdn" \
-              -o tsv 2>/dev/null || true)"
-            if [[ -n "${fqdn}" ]]; then echo "https://${fqdn}"; fi
+          resolve_ingress_url() {
+            local ingress_name="$1"
+            local suffix="$2"
+            local address=""
+
+            for _ in {1..30}; do
+              address="$(kubectl get ingress "${ingress_name}" -n "${namespace}" -o jsonpath='{.status.loadBalancer.ingress[0].ip}' 2>/dev/null || true)"
+              if [[ -z "${address}" ]]; then
+                address="$(kubectl get ingress "${ingress_name}" -n "${namespace}" -o jsonpath='{.status.loadBalancer.ingress[0].hostname}' 2>/dev/null || true)"
+              fi
+
+              if [[ -n "${address}" ]]; then
+                echo "http://${address}${suffix}"
+                return 0
+              fi
+
+              sleep 10
+            done
+
+            return 1
           }
 
-          web_url="$(read_env_value REACT_APP_WEB_BASE_URL)"
+          web_url="$(read_env_value SERVICE_WEB_ENDPOINT_URL)"
           if [[ -z "${web_url}" ]]; then
-            web_url="$(resolve_container_app_url "${WEB_CONTAINER_APP_NAME}")"
+            web_url="$(resolve_ingress_url web "")"
           fi
 
-          api_url="$(read_env_value API_BASE_URL)"
+          api_url="$(read_env_value SERVICE_API_ENDPOINT_URL)"
           if [[ -z "${api_url}" ]]; then
-            api_url="$(resolve_container_app_url "${API_CONTAINER_APP_NAME}")"
+            api_url="$(resolve_ingress_url api "/api")"
           fi
 
           echo "web_url=${web_url}" >> "${GITHUB_OUTPUT}"
@@ -156,18 +165,20 @@ jobs:
     needs: deploy
     if: needs.deploy.outputs.web_url != ''
     steps:
-      - uses: actions/checkout@v4
-
       - name: Run health checks
         run: |
+          set -euo pipefail
+
           for i in {1..30}; do
             if curl -fsS "${{ needs.deploy.outputs.web_url }}/" > /dev/null 2>&1 \
               && curl -fsS "${{ needs.deploy.outputs.api_url }}/health" > /dev/null 2>&1; then
               echo "Health checks passed"
               exit 0
             fi
+
             echo "Attempt $i: waiting..."
             sleep 10
           done
+
           echo "Health checks failed after 30 attempts"
           exit 1

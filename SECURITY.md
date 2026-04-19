@@ -34,5 +34,5 @@ This is a **template repository**. When using it to build your own application:
 - **Never commit secrets** — use environment variables and Azure Key Vault
 - **Set `JWT_SECRET`** — always provide a strong, random JWT secret via environment variables; the app will refuse to start without one
 - **Review Bicep templates** — customize `infra/` for your security requirements before deploying
-- **Enable HTTPS** — Azure Container Apps provides TLS by default
+- **Enable HTTPS** — configure TLS on the AKS ingress before exposing the app publicly
 - **Keep dependencies updated** — run `npm audit` regularly

@@ -58,7 +58,7 @@ cd src/web && npm run lint
 
 ```bash
 azd auth login
-azd up                      # Provision + deploy to Azure Container Apps
+azd up                      # Provision + deploy to Azure Kubernetes Service (AKS)
 azd provision               # Provision only
 azd deploy                  # Deploy only
 azd down                    # Tear down all resources
@@ -68,10 +68,10 @@ azd down                    # Tear down all resources
 
 ### Service topology
 
-Two services orchestrated by Aspire (`apphost.cs`), deployed as Azure Container Apps:
+Two services orchestrated by Aspire (`apphost.cs`), deployed as Azure Kubernetes Service (AKS):
 
 - **API** (`src/api/`) — Express.js on port 5001 (8080 in container). Auth, podcast generation, admin.
-- **Web** (`src/web/`) — Next.js on port 3001 (3000 in container). Proxies `/api/*` to the API via `next.config.ts` rewrites.
+- **Web** (`src/web/`) — Next.js on port 3001 (3000 in container). Uses the App Router `/api/[...path]` proxy to reach the API in deployed environments.
 
 Web depends on API (Aspire `WaitFor(api)`). No shared code package exists between them — types are defined independently in each service.
 
@@ -102,7 +102,7 @@ Web depends on API (Aspire `WaitFor(api)`). No shared code package exists betwee
 
 ### Infrastructure (`infra/`)
 
-Bicep templates provision: Container Apps Environment, ACR, Log Analytics, Application Insights, managed identities for API and Web container apps.
+Bicep templates provision: AKS, ACR, Log Analytics, Application Insights, and workload identity for the API service.
 
 ## Key Conventions
 
