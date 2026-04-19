@@ -1,8 +1,19 @@
 #!/usr/bin/env pwsh
 $ErrorActionPreference = "Stop"
 
-$existingKey = azd env get-value AKS_SSH_PUBLIC_KEY 2>$null
+$existingKey = azd env config get infra.parameters.aksSshPublicKey 2>$null
+if ($LASTEXITCODE -ne 0) {
+    $existingKey = $null
+}
+if (-not $existingKey) {
+    $existingKey = azd env get-value AKS_SSH_PUBLIC_KEY 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        $existingKey = $null
+    }
+}
 if ($existingKey) {
+    azd env set AKS_SSH_PUBLIC_KEY "$existingKey" | Out-Null
+    azd env config set infra.parameters.aksSshPublicKey "$existingKey" | Out-Null
     Write-Host "AKS_SSH_PUBLIC_KEY already configured."
     exit 0
 }
@@ -30,5 +41,6 @@ if (-not $sshKey) {
     Write-Host "Generated a new SSH public key at $keyPath.pub"
 }
 
-azd env set AKS_SSH_PUBLIC_KEY $sshKey | Out-Null
+azd env set AKS_SSH_PUBLIC_KEY "$sshKey" | Out-Null
+azd env config set infra.parameters.aksSshPublicKey "$sshKey" | Out-Null
 Write-Host "Configured AKS_SSH_PUBLIC_KEY for provisioning."

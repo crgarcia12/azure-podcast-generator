@@ -1,8 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
-existing_key="$(azd env get-value AKS_SSH_PUBLIC_KEY 2>/dev/null || true)"
+if ! existing_key="$(azd env config get infra.parameters.aksSshPublicKey 2>/dev/null)"; then
+  existing_key=""
+fi
+if [[ -z "${existing_key}" ]]; then
+  if ! existing_key="$(azd env get-value AKS_SSH_PUBLIC_KEY 2>/dev/null)"; then
+    existing_key=""
+  fi
+fi
 if [[ -n "${existing_key}" ]]; then
+  azd env set AKS_SSH_PUBLIC_KEY "${existing_key}" >/dev/null
+  azd env config set infra.parameters.aksSshPublicKey "${existing_key}" >/dev/null
   echo "AKS_SSH_PUBLIC_KEY already configured."
   exit 0
 fi
@@ -25,4 +34,5 @@ if [[ -z "${ssh_key}" ]]; then
 fi
 
 azd env set AKS_SSH_PUBLIC_KEY "${ssh_key}" >/dev/null
+azd env config set infra.parameters.aksSshPublicKey "${ssh_key}" >/dev/null
 echo "Configured AKS_SSH_PUBLIC_KEY for provisioning."

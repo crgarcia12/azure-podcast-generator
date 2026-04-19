@@ -80,7 +80,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
       {
         name: 'system'
         count: 1
-        vmSize: 'Standard_DS2_v2'
+        vmSize: 'Standard_D2s_v3'
         mode: 'System'
         osType: 'Linux'
         osSKU: 'Ubuntu'
@@ -97,9 +97,6 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
         config: {
           logAnalyticsWorkspaceResourceID: logAnalytics.outputs.id
         }
-      }
-      webAppRouting: {
-        enabled: true
       }
     }
     networkProfile: {
@@ -118,7 +115,7 @@ resource aks 'Microsoft.ContainerService/managedClusters@2024-09-01' = {
   }
 }
 
-resource apiFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2023-01-31-preview' = {
+resource apiFederatedCredential 'Microsoft.ManagedIdentity/userAssignedIdentities/federatedIdentityCredentials@2024-11-30' = {
   name: 'aks-api'
   parent: apiIdentity
   properties: {

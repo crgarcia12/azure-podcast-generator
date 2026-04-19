@@ -111,6 +111,7 @@ jobs:
           echo "AKS_SSH_PUBLIC_KEY=${ssh_key}" >> "${GITHUB_ENV}"
           azd env select "${AZURE_ENV_NAME}"
           azd env set AKS_SSH_PUBLIC_KEY "${ssh_key}"
+          azd env config set infra.parameters.aksSshPublicKey "${ssh_key}"
 
       - name: Provision infrastructure
         shell: bash

@@ -35,6 +35,21 @@ if ($containerRegistryName) {
         --only-show-errors | Out-Null
 }
 
+az config set extension.use_dynamic_install=yes_without_prompt | Out-Null
+
+$appRoutingEnabled = az aks show `
+    --resource-group $resourceGroup `
+    --name $clusterName `
+    --query "addonProfiles.webApplicationRouting.enabled" `
+    --output tsv 2>$null
+
+if ($appRoutingEnabled -ne "true") {
+    az aks approuting enable `
+        --resource-group $resourceGroup `
+        --name $clusterName `
+        --only-show-errors | Out-Null
+}
+
 az aks get-credentials `
     --resource-group $resourceGroup `
     --name $clusterName `
