@@ -12,10 +12,22 @@ export function isRemoteEnvironment(): boolean {
   return !LOCAL_HOSTS.has(hostname);
 }
 
+export function getApiBaseUrl(): string {
+  const configuredApiBaseUrl = process.env.PLAYWRIGHT_API_BASE_URL?.trim().replace(/\/$/, '');
+  if (configuredApiBaseUrl) {
+    return configuredApiBaseUrl;
+  }
+
+  if (!isRemoteEnvironment()) {
+    return DEFAULT_LOCAL_API_BASE_URL;
+  }
+
+  return getBaseUrl().replace(/\/$/, '');
+}
+
 export async function resetAppState(context: BrowserContext): Promise<void> {
   if (!isRemoteEnvironment()) {
-    const apiBaseUrl = process.env.PLAYWRIGHT_API_BASE_URL || DEFAULT_LOCAL_API_BASE_URL;
-    const response = await context.request.post(`${apiBaseUrl}/api/test/reset`);
+    const response = await context.request.post(`${getApiBaseUrl()}/api/test/reset`);
     if (!response.ok()) {
       throw new Error(`Failed to reset test state (${response.status()})`);
     }
@@ -25,7 +37,7 @@ export async function resetAppState(context: BrowserContext): Promise<void> {
 }
 
 export async function registerUser(page: Page, username: string, password: string): Promise<void> {
-  const response = await page.request.post('/api/auth/register', {
+  const response = await page.request.post(`${getApiBaseUrl()}/api/auth/register`, {
     data: { username, password },
   });
 
@@ -35,7 +47,7 @@ export async function registerUser(page: Page, username: string, password: strin
 }
 
 export async function loginUser(page: Page, username: string, password: string): Promise<void> {
-  const response = await page.request.post('/api/auth/login', {
+  const response = await page.request.post(`${getApiBaseUrl()}/api/auth/login`, {
     data: { username, password },
   });
 

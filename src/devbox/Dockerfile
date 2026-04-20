@@ -8,20 +8,16 @@ RUN apt-get update \
         apt-transport-https \
         ca-certificates \
         curl \
-        gpg \
         lsb-release \
         python3-pip \
     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && curl -fsSL https://aka.ms/install-azd.sh | bash \
-    && mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor -o /etc/apt/keyrings/microsoft.gpg \
-    && chmod a+r /etc/apt/keyrings/microsoft.gpg \
-    && . /etc/os-release \
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/microsoft.gpg] https://packages.microsoft.com/debian/${VERSION_ID}/prod ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/microsoft-prod.list \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends dotnet-sdk-9.0 \
+    && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \
+    && bash /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
+    && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
+    && rm /tmp/dotnet-install.sh \
     && npm install -g typescript-language-server \
-    && pip3 install --no-cache-dir mkdocs mkdocs-material \
+    && pip3 install --no-cache-dir --break-system-packages mkdocs mkdocs-material \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,6 +29,7 @@ ENV DEVBOX_WORKSPACE_ROOT=/workspace \
     DEVBOX_REPOSITORY_URL=https://github.com/crgarcia12/azure-podcast-generator.git \
     DEVBOX_REPOSITORY_BRANCH=main \
     DEVBOX_REPOSITORY_PATH=/workspace/azure-podcast-generator \
+    DOTNET_ROOT=/usr/share/dotnet \
     HOME=/workspace/home \
     SHELL=/bin/bash
 
