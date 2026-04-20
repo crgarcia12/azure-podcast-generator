@@ -198,7 +198,7 @@ jobs:
 
           api_url="$(read_env_value SERVICE_API_ENDPOINT_URL)"
           if [[ -z "${api_url}" ]]; then
-            api_url="$(resolve_ingress_url api "/api")"
+            api_url="$(resolve_ingress_url web "/api")"
           fi
 
           echo "web_url=${web_url}" >> "${GITHUB_OUTPUT}"

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { apiFetch } from '../lib/api';
 
 export interface Message {
   id: string;
@@ -8,8 +9,6 @@ export interface Message {
   content: string;
   isError?: boolean;
 }
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5001';
 
 const WELCOME_MESSAGE: Message = {
   id: 'welcome',
@@ -41,7 +40,7 @@ export function useChat() {
     abortRef.current = controller;
 
     try {
-      const res = await fetch(`${API_URL}/api/chat`, {
+      const res = await apiFetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -122,7 +121,7 @@ export function useChat() {
     // Delete session on backend
     if (sessionIdRef.current) {
       try {
-        await fetch(`${API_URL}/api/sessions/${sessionIdRef.current}`, {
+        await apiFetch(`/api/sessions/${sessionIdRef.current}`, {
           method: 'DELETE',
         });
       } catch {

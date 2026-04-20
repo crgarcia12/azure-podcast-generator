@@ -18,7 +18,7 @@ services:
       service:
         name: api
       ingress:
-        name: api
+        name: web
         relativePath: api
     hooks:
       predeploy:
