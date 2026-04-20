@@ -7,7 +7,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SETTINGS_FILE="$ROOT_DIR/apphost.settings.json"
 TEMPLATE_FILE="$ROOT_DIR/apphost.settings.template.json"
 AZURE_OPENAI_ROLE_NAME="Cognitive Services OpenAI User"
-AZURE_SPEECH_ROLE_NAME="Cognitive Services User"
+AZURE_SPEECH_ROLE_NAME="Cognitive Services Speech User"
 
 # Check if settings file exists, if not, copy from template
 if [ ! -f "$SETTINGS_FILE" ]; then

@@ -6,7 +6,7 @@ $ROOT_DIR = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $SETTINGS_FILE = Join-Path $ROOT_DIR "apphost.settings.json"
 $TEMPLATE_FILE = Join-Path $ROOT_DIR "apphost.settings.template.json"
 $azureOpenAiRoleName = "Cognitive Services OpenAI User"
-$azureSpeechRoleName = "Cognitive Services User"
+$azureSpeechRoleName = "Cognitive Services Speech User"
 
 # Check if settings file exists, if not, copy from template
 if (-not (Test-Path $SETTINGS_FILE)) {

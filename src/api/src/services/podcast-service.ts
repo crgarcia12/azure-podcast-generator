@@ -437,7 +437,7 @@ async function getAzureSpeechHeaders(config: AzurePodcastConfig): Promise<Record
   }
 
   const aadToken = await getAzureAccessToken();
-  headers.Authorization = `Bearer ${aadToken}`;
+  headers.Authorization = `Bearer ${buildAzureSpeechAuthorizationToken(config.speechResourceId, aadToken)}`;
   return headers;
 }
 
@@ -450,6 +450,10 @@ async function getAzureAccessToken(): Promise<string> {
   }
 
   return token.token;
+}
+
+export function buildAzureSpeechAuthorizationToken(resourceId: string, aadToken: string): string {
+  return `aad#${resourceId}#${aadToken}`;
 }
 
 function normaliseGeneratedScript(
