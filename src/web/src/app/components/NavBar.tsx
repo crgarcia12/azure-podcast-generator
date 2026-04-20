@@ -72,6 +72,9 @@ export default function NavBar() {
               <Link href="/podcasts" className={`rounded-lg px-3 py-2 text-sm font-medium transition ${pathname === '/podcasts' ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}>
                 Studio
               </Link>
+              <Link href="/podcasts/sessions" className={`rounded-lg px-3 py-2 text-sm font-medium transition ${pathname?.startsWith('/podcasts/sessions') ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}>
+                Interactive
+              </Link>
               <Link href="/profile" className={`rounded-lg px-3 py-2 text-sm font-medium transition ${pathname === '/profile' ? 'bg-violet-50 text-violet-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'}`}>
                 Profile
               </Link>
@@ -105,6 +108,9 @@ export default function NavBar() {
             <div className="flex flex-col gap-1">
               <Link href="/podcasts" className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
                 Studio
+              </Link>
+              <Link href="/podcasts/sessions" className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
+                Interactive
               </Link>
               <Link href="/profile" className="rounded-lg px-3 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-100">
                 Profile

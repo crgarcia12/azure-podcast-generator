@@ -126,6 +126,21 @@ A minimal full-stack web application with user authentication. Users can registe
 - Profile editing (profile is read-only).
 - Role management UI (no way to change roles after creation).
 
+### US-7: Interactive Podcast Chat
+**As a** listener,
+**I want to** interact with the podcast while it plays — pausing to ask questions, challenge points, or steer the conversation,
+**So that** I can explore topics that spark my curiosity instead of passively listening.
+
+**Acceptance Criteria:**
+- Podcasts play segment by segment (one host-guest exchange per segment) with automatic progression.
+- A prominent interrupt button pauses playback and accepts voice or text input.
+- The host naturally incorporates my question, the guest answers, and the interview continues in a new direction.
+- I can navigate between segments (previous/next) for when I'm distracted.
+- My podcast sessions — including all interruptions — are saved and browsable in history.
+- Audio is generated per segment with smart caching (3 segments ahead) for smooth playback.
+
+**Detailed specification:** See `specs/frd-interactive-podcast.md`.
+
 ## 8. Future Considerations
 
 - **SSO via Microsoft Entra ID:** The auth architecture (JWT-based, role in token payload) is designed to be compatible with a future migration to Entra ID SSO. When added, the `/api/auth/login` flow would be replaced by an Entra redirect, and the JWT would be issued from Entra tokens. The role model (`user`/`admin`) can map to Entra groups/app roles.
