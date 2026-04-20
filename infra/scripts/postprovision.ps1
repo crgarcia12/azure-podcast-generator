@@ -5,6 +5,8 @@ Write-Host "Post-provision configuration..." -ForegroundColor Green
 $ROOT_DIR = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $SETTINGS_FILE = Join-Path $ROOT_DIR "apphost.settings.json"
 $TEMPLATE_FILE = Join-Path $ROOT_DIR "apphost.settings.template.json"
+$azureOpenAiRoleName = "Cognitive Services OpenAI User"
+$azureSpeechRoleName = "Cognitive Services User"
 
 # Check if settings file exists, if not, copy from template
 if (-not (Test-Path $SETTINGS_FILE)) {
@@ -17,11 +19,30 @@ if (-not (Test-Path $SETTINGS_FILE)) {
     }
 }
 
-$resourceGroup = azd env get-value AZURE_RESOURCE_GROUP 2>$null
-$clusterName = azd env get-value AKS_CLUSTER_NAME 2>$null
-$namespaceName = azd env get-value AKS_NAMESPACE 2>$null
-$containerRegistryName = azd env get-value AZURE_CONTAINER_REGISTRY_NAME 2>$null
-$containerRegistryEndpoint = azd env get-value AZURE_CONTAINER_REGISTRY_ENDPOINT 2>$null
+function Get-AzdEnvValue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Key
+    )
+
+    $processValue = [System.Environment]::GetEnvironmentVariable($Key)
+    if ($processValue) {
+        return $processValue
+    }
+
+    $value = azd env get-value $Key 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    return $value
+}
+
+$resourceGroup = Get-AzdEnvValue AZURE_RESOURCE_GROUP
+$clusterName = Get-AzdEnvValue AKS_CLUSTER_NAME
+$namespaceName = Get-AzdEnvValue AKS_NAMESPACE
+$containerRegistryName = Get-AzdEnvValue AZURE_CONTAINER_REGISTRY_NAME
+$containerRegistryEndpoint = Get-AzdEnvValue AZURE_CONTAINER_REGISTRY_ENDPOINT
 
 if (-not $resourceGroup -or -not $clusterName) {
     throw "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment."
@@ -67,6 +88,66 @@ function Wait-ForAksCluster {
     }
 
     return $false
+}
+
+function Ensure-RoleAssignment {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Scope,
+        [Parameter(Mandatory = $true)]
+        [string]$PrincipalId,
+        [Parameter(Mandatory = $true)]
+        [string]$RoleName
+    )
+
+    if (-not $Scope -or -not $PrincipalId) {
+        return
+    }
+
+    $assignmentCount = az role assignment list `
+        --assignee-object-id $PrincipalId `
+        --scope $Scope `
+        --query "length([?roleDefinitionName=='$RoleName'])" `
+        --output tsv 2>$null
+
+    if ($LASTEXITCODE -ne 0 -or -not $assignmentCount -or $assignmentCount -eq "0") {
+        az role assignment create `
+            --assignee-object-id $PrincipalId `
+            --assignee-principal-type ServicePrincipal `
+            --role $RoleName `
+            --scope $Scope `
+            --only-show-errors | Out-Null
+    }
+}
+
+$apiIdentityClientId = Get-AzdEnvValue API_MANAGED_IDENTITY_CLIENT_ID
+$apiIdentityPrincipalId = $null
+$openAiEndpoint = Get-AzdEnvValue AZURE_OPENAI_ENDPOINT
+$speechResourceId = Get-AzdEnvValue AZURE_SPEECH_RESOURCE_ID
+$openAiResourceId = $null
+
+if ($apiIdentityClientId) {
+    $apiIdentityPrincipalId = az identity list `
+        --resource-group $resourceGroup `
+        --query "[?clientId=='$apiIdentityClientId'].principalId | [0]" `
+        --output tsv 2>$null
+}
+
+if ($openAiEndpoint) {
+    $openAiResourceName = ([System.Uri]$openAiEndpoint).Host.Split('.')[0]
+    $openAiResourceId = az resource list `
+        --name $openAiResourceName `
+        --resource-type "Microsoft.CognitiveServices/accounts" `
+        --query "[0].id" `
+        --output tsv 2>$null
+}
+
+if ($apiIdentityPrincipalId -and $openAiResourceId) {
+    Ensure-RoleAssignment -Scope $openAiResourceId -PrincipalId $apiIdentityPrincipalId -RoleName $azureOpenAiRoleName
+}
+
+if ($apiIdentityPrincipalId -and $speechResourceId) {
+    Ensure-RoleAssignment -Scope $speechResourceId -PrincipalId $apiIdentityPrincipalId -RoleName $azureSpeechRoleName
 }
 
 azd env set AZURE_AKS_CLUSTER_NAME $clusterName | Out-Null

@@ -91,6 +91,7 @@ kubectl create secret generic api-config \
   --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
 
 export SERVICE_API_IMAGE_NAME="$(get_env_value SERVICE_API_IMAGE_NAME)"
+export SERVICE_DEVBOX_IMAGE_NAME="$(get_env_value SERVICE_DEVBOX_IMAGE_NAME)"
 export SERVICE_WEB_IMAGE_NAME="$(get_env_value SERVICE_WEB_IMAGE_NAME)"
 export API_MANAGED_IDENTITY_CLIENT_ID="$(get_env_value API_MANAGED_IDENTITY_CLIENT_ID)"
 

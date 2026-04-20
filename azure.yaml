@@ -30,6 +30,25 @@ services:
           shell: pwsh
           run: ../../infra/scripts/predeploy.ps1
           continueOnError: false
+  devbox:
+    project: ./src/devbox
+    host: aks
+    language: js
+    k8s:
+      deploymentPath: ./manifests-generated
+      namespace: azure-podcast-generator
+      deployment:
+        name: devbox
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: bash ../../infra/scripts/predeploy.sh
+          continueOnError: false
+        windows:
+          shell: pwsh
+          run: ../../infra/scripts/predeploy.ps1
+          continueOnError: false
   web:
     project: ./src/web
     host: aks

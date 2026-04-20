@@ -31,6 +31,7 @@ coverage/
 # AZD
 .azure/
 src/api/manifests-generated/
+src/devbox/manifests-generated/
 src/web/manifests-generated/
 
 # Docs (auto-generated)

@@ -104,6 +104,7 @@ PODCAST_GUEST_VOICE=en-US-GuyNeural
 ```text
 src/web/      Next.js frontend
 src/api/      Express API
+src/devbox/   Persistent AKS devbox container
 src/shared/   Shared types
 e2e/          Playwright tests
 tests/        Cucumber tests
@@ -118,6 +119,12 @@ This repo includes Azure deployment assets for AKS.
 ```bash
 azd auth login
 azd up
+```
+
+The AKS deployment also includes a persistent `devbox` pod. Attach to it with:
+
+```bash
+kubectl exec -it deploy/devbox -n azure-podcast-generator -- bash
 ```
 
 If you want Azure-backed podcast generation after deployment, make sure the API workload receives the Azure OpenAI and Azure Speech settings expected by the backend.

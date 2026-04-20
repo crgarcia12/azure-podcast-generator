@@ -31,6 +31,16 @@ if (process.env.SERVICE_API_IMAGE_NAME) {
   );
 }
 
+if (process.env.SERVICE_DEVBOX_IMAGE_NAME) {
+  renderTemplate(
+    path.join(rootDir, 'src', 'devbox', 'manifests', 'devbox.yaml'),
+    path.join(rootDir, 'src', 'devbox', 'manifests-generated', 'devbox.yaml'),
+    {
+      SERVICE_DEVBOX_IMAGE_NAME: process.env.SERVICE_DEVBOX_IMAGE_NAME
+    }
+  );
+}
+
 if (process.env.SERVICE_WEB_IMAGE_NAME) {
   renderTemplate(
     path.join(rootDir, 'src', 'web', 'manifests', 'web.yaml'),
