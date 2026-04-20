@@ -35,6 +35,9 @@ $serviceWebEndpointUrl = if ($env:SERVICE_WEB_ENDPOINT_URL) {
 } else {
     azd env get-value SERVICE_WEB_ENDPOINT_URL 2>$null
 }
+if ($serviceWebEndpointUrl) {
+    $serviceWebEndpointUrl = $serviceWebEndpointUrl.TrimEnd('/')
+}
 
 $cookieSecure = if ($env:COOKIE_SECURE) {
     $env:COOKIE_SECURE.ToLowerInvariant()
@@ -44,8 +47,16 @@ $cookieSecure = if ($env:COOKIE_SECURE) {
     "false"
 }
 
+if ($env:ALLOWED_ORIGINS) {
+    $allowedOrigins = $env:ALLOWED_ORIGINS
+} elseif ($serviceWebEndpointUrl) {
+    $allowedOrigins = $serviceWebEndpointUrl
+} else {
+    $allowedOrigins = $null
+}
+
 Add-EnvVar -Name "COOKIE_SECURE" -Value $cookieSecure
-Set-Or-UnsetEnvVar -Name "ALLOWED_ORIGINS" -Value $env:ALLOWED_ORIGINS
+Set-Or-UnsetEnvVar -Name "ALLOWED_ORIGINS" -Value $allowedOrigins
 Set-Or-UnsetEnvVar -Name "REGISTRATION_ENABLED" -Value $env:REGISTRATION_ENABLED
 Set-Or-UnsetEnvVar -Name "SEED_ADMIN_USERNAME" -Value $env:SEED_ADMIN_USERNAME
 

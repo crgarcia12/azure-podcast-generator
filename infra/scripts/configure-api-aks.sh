@@ -26,6 +26,7 @@ service_web_endpoint_url="${SERVICE_WEB_ENDPOINT_URL:-}"
 if [[ -z "${service_web_endpoint_url}" ]]; then
   service_web_endpoint_url="$(azd env get-value SERVICE_WEB_ENDPOINT_URL 2>/dev/null || true)"
 fi
+service_web_endpoint_url="${service_web_endpoint_url%/}"
 
 cookie_secure="${COOKIE_SECURE:-}"
 if [[ -z "${cookie_secure}" ]]; then
@@ -36,8 +37,13 @@ if [[ -z "${cookie_secure}" ]]; then
   fi
 fi
 
+allowed_origins="${ALLOWED_ORIGINS:-}"
+if [[ -z "${allowed_origins}" && -n "${service_web_endpoint_url}" ]]; then
+  allowed_origins="${service_web_endpoint_url}"
+fi
+
 add_env_var "COOKIE_SECURE" "${cookie_secure}"
-unset_when_missing "ALLOWED_ORIGINS" "${ALLOWED_ORIGINS:-}"
+unset_when_missing "ALLOWED_ORIGINS" "${allowed_origins}"
 unset_when_missing "REGISTRATION_ENABLED" "${REGISTRATION_ENABLED:-}"
 unset_when_missing "SEED_ADMIN_USERNAME" "${SEED_ADMIN_USERNAME:-}"
 
