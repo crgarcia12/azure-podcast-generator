@@ -90,10 +90,16 @@ app_routing_enabled="$(az aks show \
   --output tsv 2>/dev/null || true)"
 
 if [[ "${app_routing_enabled}" != "true" ]]; then
-  az aks approuting enable \
+  app_routing_output=""
+  if ! app_routing_output="$(az aks approuting enable \
     --resource-group "${resource_group}" \
     --name "${cluster_name}" \
-    --only-show-errors >/dev/null
+    --only-show-errors 2>&1)"; then
+    if [[ "${app_routing_output}" != *"already enabled"* ]]; then
+      printf '%s\n' "${app_routing_output}" >&2
+      exit 1
+    fi
+  fi
 fi
 
 az aks get-credentials \

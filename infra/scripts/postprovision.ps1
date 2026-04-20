@@ -93,10 +93,13 @@ $appRoutingEnabled = az aks show `
     --output tsv 2>$null
 
 if ($appRoutingEnabled -ne "true") {
-    az aks approuting enable `
+    $appRoutingOutput = az aks approuting enable `
         --resource-group $resourceGroup `
         --name $clusterName `
-        --only-show-errors | Out-Null
+        --only-show-errors 2>&1
+    if ($LASTEXITCODE -ne 0 -and (-not ($appRoutingOutput | Out-String).Contains("already enabled"))) {
+        throw ($appRoutingOutput | Out-String)
+    }
 }
 
 az aks get-credentials `
