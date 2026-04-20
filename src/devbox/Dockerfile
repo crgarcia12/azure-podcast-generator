@@ -8,6 +8,7 @@ RUN apt-get update \
         apt-transport-https \
         ca-certificates \
         curl \
+        gh \
         lsb-release \
         python3-pip \
     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
@@ -16,7 +17,7 @@ RUN apt-get update \
     && bash /tmp/dotnet-install.sh --channel 9.0 --install-dir /usr/share/dotnet \
     && ln -s /usr/share/dotnet/dotnet /usr/local/bin/dotnet \
     && rm /tmp/dotnet-install.sh \
-    && npm install -g typescript-language-server \
+    && npm install -g @github/copilot typescript-language-server \
     && pip3 install --no-cache-dir --break-system-packages mkdocs mkdocs-material \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

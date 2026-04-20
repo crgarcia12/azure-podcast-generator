@@ -2,6 +2,10 @@
 
 Create short, interview-style podcast episodes from a topic. Authenticated users can generate a script, read the transcript, and listen to audio directly in the browser.
 
+## App preview
+
+![Azure Podcast Generator UI](readme-media/1.png)
+
 ## What the app does
 
 - Supports registration, login, profile, and admin flows
@@ -121,10 +125,26 @@ azd auth login
 azd up
 ```
 
-The AKS deployment also includes a persistent `devbox` pod. Attach to it with:
+## AKS devbox
+
+The AKS deployment also includes an internal `devbox` workload for cluster-side development and debugging.
+
+- It is **not** exposed publicly through ingress.
+- It uses a persistent volume mounted at `/workspace`, so files survive pod restarts and redeploys.
+- On first start it bootstraps the repo into `/workspace/azure-podcast-generator`.
+- The image includes Azure CLI, Azure Developer CLI, GitHub CLI, and GitHub Copilot CLI.
+- It is useful for live troubleshooting, running commands close to the cluster, and keeping scratch files inside AKS.
+
+Attach to it with:
 
 ```bash
 kubectl exec -it deploy/devbox -n azure-podcast-generator -- bash
+```
+
+Once connected, the project lives at:
+
+```bash
+cd /workspace/azure-podcast-generator
 ```
 
 If you want Azure-backed podcast generation after deployment, make sure the API workload receives the Azure OpenAI and Azure Speech settings expected by the backend.
