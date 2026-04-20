@@ -40,15 +40,15 @@ describe('POST /api/auth/login', () => {
     expect(cookieStr).toMatch(/Max-Age=86400/);
   });
 
-  it('should set secure cookies for non-local hosts', async () => {
+  it('should set secure cookies when the forwarded protocol is https', async () => {
     await request(app)
       .post('/api/auth/register')
-      .set('x-forwarded-host', 'podcasts.example.com')
+      .set('x-forwarded-proto', 'https')
       .send({ username: 'securecookieuser', password: 'securepass123' });
 
     const res = await request(app)
       .post('/api/auth/login')
-      .set('x-forwarded-host', 'podcasts.example.com')
+      .set('x-forwarded-proto', 'https')
       .send({ username: 'securecookieuser', password: 'securepass123' });
 
     const cookies = res.headers['set-cookie'];
@@ -57,22 +57,49 @@ describe('POST /api/auth/login', () => {
     expect(cookieStr).toMatch(/Secure/i);
   });
 
-  it('should keep loopback cookies host-only when the app is accessed via 127.0.0.1', async () => {
+  it('should not set secure cookies when the forwarded protocol is http', async () => {
     await request(app)
       .post('/api/auth/register')
-      .set('x-forwarded-host', '127.0.0.1:3000')
-      .send({ username: 'loopbackuser', password: 'securepass123' });
+      .set('x-forwarded-proto', 'http')
+      .send({ username: 'insecurecookieuser', password: 'securepass123' });
 
     const res = await request(app)
       .post('/api/auth/login')
-      .set('x-forwarded-host', '127.0.0.1:3000')
-      .send({ username: 'loopbackuser', password: 'securepass123' });
+      .set('x-forwarded-proto', 'http')
+      .send({ username: 'insecurecookieuser', password: 'securepass123' });
 
     const cookies = res.headers['set-cookie'];
     expect(cookies).toBeDefined();
     const cookieStr = cookies.toString();
-    expect(cookieStr).not.toMatch(/Domain=/i);
     expect(cookieStr).not.toMatch(/Secure/i);
+  });
+
+  it('should honor COOKIE_SECURE=false even when the forwarded protocol is https', async () => {
+    const originalCookieSecure = process.env.COOKIE_SECURE;
+    process.env.COOKIE_SECURE = 'false';
+
+    try {
+      await request(app)
+        .post('/api/auth/register')
+        .set('x-forwarded-proto', 'https')
+        .send({ username: 'overridecookieuser', password: 'securepass123' });
+
+      const res = await request(app)
+        .post('/api/auth/login')
+        .set('x-forwarded-proto', 'https')
+        .send({ username: 'overridecookieuser', password: 'securepass123' });
+
+      const cookies = res.headers['set-cookie'];
+      expect(cookies).toBeDefined();
+      const cookieStr = cookies.toString();
+      expect(cookieStr).not.toMatch(/Secure/i);
+    } finally {
+      if (originalCookieSecure === undefined) {
+        delete process.env.COOKIE_SECURE;
+      } else {
+        process.env.COOKIE_SECURE = originalCookieSecure;
+      }
+    }
   });
 
   it('should return 401 for invalid password', async () => {

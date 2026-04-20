@@ -30,7 +30,21 @@ function Set-Or-UnsetEnvVar {
     }
 }
 
-Add-EnvVar -Name "COOKIE_SECURE" -Value "true"
+$serviceWebEndpointUrl = if ($env:SERVICE_WEB_ENDPOINT_URL) {
+    $env:SERVICE_WEB_ENDPOINT_URL
+} else {
+    azd env get-value SERVICE_WEB_ENDPOINT_URL 2>$null
+}
+
+$cookieSecure = if ($env:COOKIE_SECURE) {
+    $env:COOKIE_SECURE.ToLowerInvariant()
+} elseif ($serviceWebEndpointUrl -like "https://*") {
+    "true"
+} else {
+    "false"
+}
+
+Add-EnvVar -Name "COOKIE_SECURE" -Value $cookieSecure
 Set-Or-UnsetEnvVar -Name "ALLOWED_ORIGINS" -Value $env:ALLOWED_ORIGINS
 Set-Or-UnsetEnvVar -Name "REGISTRATION_ENABLED" -Value $env:REGISTRATION_ENABLED
 Set-Or-UnsetEnvVar -Name "SEED_ADMIN_USERNAME" -Value $env:SEED_ADMIN_USERNAME

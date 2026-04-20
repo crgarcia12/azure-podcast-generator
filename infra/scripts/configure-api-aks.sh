@@ -22,7 +22,21 @@ unset_when_missing() {
   fi
 }
 
-add_env_var "COOKIE_SECURE" "true"
+service_web_endpoint_url="${SERVICE_WEB_ENDPOINT_URL:-}"
+if [[ -z "${service_web_endpoint_url}" ]]; then
+  service_web_endpoint_url="$(azd env get-value SERVICE_WEB_ENDPOINT_URL 2>/dev/null || true)"
+fi
+
+cookie_secure="${COOKIE_SECURE:-}"
+if [[ -z "${cookie_secure}" ]]; then
+  if [[ "${service_web_endpoint_url}" == https://* ]]; then
+    cookie_secure="true"
+  else
+    cookie_secure="false"
+  fi
+fi
+
+add_env_var "COOKIE_SECURE" "${cookie_secure}"
 unset_when_missing "ALLOWED_ORIGINS" "${ALLOWED_ORIGINS:-}"
 unset_when_missing "REGISTRATION_ENABLED" "${REGISTRATION_ENABLED:-}"
 unset_when_missing "SEED_ADMIN_USERNAME" "${SEED_ADMIN_USERNAME:-}"

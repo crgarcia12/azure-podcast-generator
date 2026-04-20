@@ -13,18 +13,29 @@ const getSecret = (): string => {
   return secret;
 };
 
-const LOCAL_HOST_REGEX = /^(localhost|127\.0\.0\.1)(:\d+)?$/i;
-
 const getRequestHostname = (req: Request): string | undefined =>
   req.get('x-forwarded-host')?.split(',')[0]?.trim().split(':')[0] ?? req.get('host')?.split(':')[0];
 
+const getForwardedProto = (req: Request): string | undefined =>
+  req.get('x-forwarded-proto')?.split(',')[0]?.trim().toLowerCase();
+
 const shouldUseSecureCookies = (req: Request): boolean => {
-  if (process.env.COOKIE_SECURE === 'true') {
+  const configuredCookieSecure = process.env.COOKIE_SECURE?.trim().toLowerCase();
+
+  if (configuredCookieSecure === 'true') {
     return true;
   }
 
-  const forwardedHost = req.get('x-forwarded-host')?.split(',')[0]?.trim();
-  return !forwardedHost || !LOCAL_HOST_REGEX.test(forwardedHost);
+  if (configuredCookieSecure === 'false') {
+    return false;
+  }
+
+  const forwardedProto = getForwardedProto(req);
+  if (forwardedProto) {
+    return forwardedProto === 'https';
+  }
+
+  return req.secure;
 };
 
 const getLegacyLocalCookieDomain = (req: Request): string | undefined =>
