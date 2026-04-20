@@ -29,7 +29,49 @@ if [[ -z "${resource_group}" || -z "${cluster_name}" ]]; then
   exit 1
 fi
 
+wait_for_cluster() {
+  local started_cluster=0
+
+  for _ in {1..60}; do
+    local provisioning_state
+    local power_state
+
+    provisioning_state="$(az aks show \
+      --resource-group "${resource_group}" \
+      --name "${cluster_name}" \
+      --query "provisioningState" \
+      --output tsv 2>/dev/null || true)"
+    power_state="$(az aks show \
+      --resource-group "${resource_group}" \
+      --name "${cluster_name}" \
+      --query "powerState.code" \
+      --output tsv 2>/dev/null || true)"
+
+    if [[ "${power_state}" == "Stopped" && "${started_cluster}" -eq 0 ]]; then
+      az aks start \
+        --resource-group "${resource_group}" \
+        --name "${cluster_name}" \
+        --only-show-errors >/dev/null
+      started_cluster=1
+      power_state="Starting"
+    fi
+
+    if [[ "${provisioning_state}" == "Succeeded" && "${power_state}" == "Running" ]]; then
+      return 0
+    fi
+
+    sleep 10
+  done
+
+  return 1
+}
+
 azd env set AZURE_AKS_CLUSTER_NAME "${cluster_name}" >/dev/null
+
+if ! wait_for_cluster; then
+  echo "AKS cluster not available yet, skipping Kubernetes context setup. It will be configured when the cluster is provisioned and a deployment is performed."
+  exit 0
+fi
 
 if [[ -n "${container_registry_name}" ]]; then
   az aks update \

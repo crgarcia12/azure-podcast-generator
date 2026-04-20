@@ -4,6 +4,10 @@ set -euo pipefail
 get_env_value() {
   local key="$1"
   local value=""
+  if [[ -n "${!key:-}" ]]; then
+    printf '%s' "${!key}"
+    return 0
+  fi
   if value="$(azd env get-value "${key}" 2>/dev/null)"; then
     printf '%s' "${value}"
   fi
@@ -14,6 +18,48 @@ cluster_name="$(get_env_value AKS_CLUSTER_NAME)"
 
 if [[ -z "${resource_group}" || -z "${cluster_name}" ]]; then
   echo "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment." >&2
+  exit 1
+fi
+
+wait_for_cluster() {
+  local started_cluster=0
+
+  for _ in {1..60}; do
+    local provisioning_state
+    local power_state
+
+    provisioning_state="$(az aks show \
+      --resource-group "${resource_group}" \
+      --name "${cluster_name}" \
+      --query "provisioningState" \
+      --output tsv 2>/dev/null || true)"
+    power_state="$(az aks show \
+      --resource-group "${resource_group}" \
+      --name "${cluster_name}" \
+      --query "powerState.code" \
+      --output tsv 2>/dev/null || true)"
+
+    if [[ "${power_state}" == "Stopped" && "${started_cluster}" -eq 0 ]]; then
+      az aks start \
+        --resource-group "${resource_group}" \
+        --name "${cluster_name}" \
+        --only-show-errors >/dev/null
+      started_cluster=1
+      power_state="Starting"
+    fi
+
+    if [[ "${provisioning_state}" == "Succeeded" && "${power_state}" == "Running" ]]; then
+      return 0
+    fi
+
+    sleep 10
+  done
+
+  return 1
+}
+
+if ! wait_for_cluster; then
+  echo "AKS cluster '${cluster_name}' is not available for deployment." >&2
   exit 1
 fi
 

@@ -27,7 +27,54 @@ if (-not $resourceGroup -or -not $clusterName) {
     throw "AZURE_RESOURCE_GROUP and AKS_CLUSTER_NAME must be available in the azd environment."
 }
 
+function Wait-ForAksCluster {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroup,
+        [Parameter(Mandatory = $true)]
+        [string]$ClusterName
+    )
+
+    $startedCluster = $false
+
+    for ($attempt = 0; $attempt -lt 60; $attempt++) {
+        $clusterState = az aks show `
+            --resource-group $ResourceGroup `
+            --name $ClusterName `
+            --query "{provisioningState:provisioningState,powerState:powerState.code}" `
+            --output json 2>$null | ConvertFrom-Json
+
+        if ($LASTEXITCODE -ne 0) {
+            Start-Sleep -Seconds 10
+            continue
+        }
+
+        if ($clusterState.powerState -eq "Stopped" -and -not $startedCluster) {
+            az aks start `
+                --resource-group $ResourceGroup `
+                --name $ClusterName `
+                --only-show-errors | Out-Null
+            $startedCluster = $true
+            Start-Sleep -Seconds 10
+            continue
+        }
+
+        if ($clusterState.provisioningState -eq "Succeeded" -and $clusterState.powerState -eq "Running") {
+            return $true
+        }
+
+        Start-Sleep -Seconds 10
+    }
+
+    return $false
+}
+
 azd env set AZURE_AKS_CLUSTER_NAME $clusterName | Out-Null
+
+if (-not (Wait-ForAksCluster -ResourceGroup $resourceGroup -ClusterName $clusterName)) {
+    Write-Host "AKS cluster not available yet, skipping Kubernetes context setup. It will be configured when the cluster is provisioned and a deployment is performed." -ForegroundColor Yellow
+    exit 0
+}
 
 if ($containerRegistryName) {
     az aks update `
