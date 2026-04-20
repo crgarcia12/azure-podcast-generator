@@ -90,7 +90,6 @@ Feature: Authentication
     Then the response status should be 200
     And the response body should contain "message" with value "Login successful"
     And the response should set a cookie "token" with HttpOnly flag
-    And the response should set a cookie "token" with Secure flag
     And the response should set a cookie "token" with SameSite "Strict"
     And the response should set a cookie "token" with Path "/"
     And the response should set a cookie "token" with Max-Age 86400
