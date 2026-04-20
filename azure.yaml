@@ -20,6 +20,16 @@ services:
       ingress:
         name: api
         relativePath: api
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: bash ../../infra/scripts/predeploy.sh
+          continueOnError: false
+        windows:
+          shell: pwsh
+          run: ../../infra/scripts/predeploy.ps1
+          continueOnError: false
   web:
     project: ./src/web
     host: aks
@@ -33,6 +43,16 @@ services:
         name: web
       ingress:
         name: web
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: bash ../../infra/scripts/predeploy.sh
+          continueOnError: false
+        windows:
+          shell: pwsh
+          run: ../../infra/scripts/predeploy.ps1
+          continueOnError: false
 hooks:
   postprovision:
     posix:
@@ -42,13 +62,4 @@ hooks:
     windows:
       shell: pwsh
       run: ./infra/scripts/postprovision.ps1
-      continueOnError: false
-  predeploy:
-    posix:
-      shell: sh
-      run: bash ./infra/scripts/predeploy.sh
-      continueOnError: false
-    windows:
-      shell: pwsh
-      run: ./infra/scripts/predeploy.ps1
       continueOnError: false
