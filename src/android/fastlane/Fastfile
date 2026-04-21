@@ -1,0 +1,91 @@
+# Fastlane configuration for PodCraft Android
+# https://docs.fastlane.tools
+
+default_platform(:android)
+
+platform :android do
+  desc "Run unit tests"
+  lane :test do
+    gradle(
+      task: "testDevDebugUnitTest",
+      project_dir: "."
+    )
+  end
+
+  desc "Build debug APK"
+  lane :build_debug do
+    gradle(
+      task: "assembleDevDebug",
+      project_dir: "."
+    )
+  end
+
+  desc "Build release AAB (App Bundle) for Play Store"
+  lane :build_release do
+    # Bump version
+    version_code = bump_version_code
+
+    gradle(
+      task: "bundleProdRelease",
+      project_dir: ".",
+      properties: {
+        "android.injected.signing.store.file" => ENV["KEYSTORE_FILE"] || "release.keystore",
+        "android.injected.signing.store.password" => ENV["KEYSTORE_PASSWORD"],
+        "android.injected.signing.key.alias" => ENV["KEY_ALIAS"] || "podcraft",
+        "android.injected.signing.key.password" => ENV["KEY_PASSWORD"],
+      }
+    )
+
+    UI.success("Built release AAB with versionCode #{version_code}")
+  end
+
+  desc "Deploy to Google Play internal testing track"
+  lane :deploy_internal do
+    build_release
+
+    upload_to_play_store(
+      track: "internal",
+      aab: "app/build/outputs/bundle/prodRelease/app-prod-release.aab",
+      json_key: ENV["PLAY_STORE_KEY_PATH"] || "play-store-key.json",
+      package_name: "com.podcraft.android",
+      skip_upload_metadata: false,
+      skip_upload_images: true,
+      skip_upload_screenshots: true,
+    )
+  end
+
+  desc "Promote internal to closed beta"
+  lane :promote_to_beta do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "beta",
+      json_key: ENV["PLAY_STORE_KEY_PATH"] || "play-store-key.json",
+      package_name: "com.podcraft.android",
+      skip_upload_changelogs: true,
+    )
+  end
+
+  desc "Promote beta to production"
+  lane :promote_to_production do
+    upload_to_play_store(
+      track: "beta",
+      track_promote_to: "production",
+      json_key: ENV["PLAY_STORE_KEY_PATH"] || "play-store-key.json",
+      package_name: "com.podcraft.android",
+      skip_upload_changelogs: true,
+      rollout: "0.1",  # 10% staged rollout
+    )
+  end
+
+  # Helper: read and bump version code in version.properties
+  private_lane :bump_version_code do
+    props_file = "../version.properties"
+    props = File.read(props_file)
+    current_code = props.match(/VERSION_CODE=(\d+)/)[1].to_i
+    new_code = current_code + 1
+    props.sub!(/VERSION_CODE=\d+/, "VERSION_CODE=#{new_code}")
+    File.write(props_file, props)
+    UI.message("Bumped versionCode: #{current_code} → #{new_code}")
+    new_code
+  end
+end

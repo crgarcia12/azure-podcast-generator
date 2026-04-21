@@ -5,6 +5,14 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+// Read version from version.properties
+val versionPropsFile = rootProject.file("version.properties")
+val versionProps = java.util.Properties().apply {
+    if (versionPropsFile.exists()) load(versionPropsFile.inputStream())
+}
+val appVersionCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
+val appVersionName = versionProps.getProperty("VERSION_NAME", "1.0.0")
+
 android {
     namespace = "com.podcraft.android"
     compileSdk = 35
@@ -13,20 +21,61 @@ android {
         applicationId = "com.podcraft.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = appVersionCode
+        versionName = appVersionName
+    }
 
-        // API base URL — override via BuildConfig for different environments
-        buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:5001\"")
+    // Release signing — reads from environment variables or keystore.properties
+    signingConfigs {
+        create("release") {
+            val keystorePropsFile = rootProject.file("keystore.properties")
+            if (keystorePropsFile.exists()) {
+                val keystoreProps = java.util.Properties().apply {
+                    load(keystorePropsFile.inputStream())
+                }
+                storeFile = file(keystoreProps.getProperty("STORE_FILE", "release.keystore"))
+                storePassword = keystoreProps.getProperty("STORE_PASSWORD", "")
+                keyAlias = keystoreProps.getProperty("KEY_ALIAS", "podcraft")
+                keyPassword = keystoreProps.getProperty("KEY_PASSWORD", "")
+            } else {
+                // CI: read from environment variables
+                storeFile = file(System.getenv("KEYSTORE_FILE") ?: "release.keystore")
+                storePassword = System.getenv("KEYSTORE_PASSWORD") ?: ""
+                keyAlias = System.getenv("KEY_ALIAS") ?: "podcraft"
+                keyPassword = System.getenv("KEY_PASSWORD") ?: ""
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:5001\"")
+        }
         release {
             isMinifyEnabled = true
+            isShrinkResources = true
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "API_BASE_URL", "\"https://podcraft.azurecontainerapps.io\"")
+        }
+    }
+
+    flavorDimensions += "environment"
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:5001\"")
+        }
+        create("prod") {
+            dimension = "environment"
+            // Uses the build type's API_BASE_URL
         }
     }
 

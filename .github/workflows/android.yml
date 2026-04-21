@@ -38,16 +38,16 @@ jobs:
           gradle-version: '8.11.1'
 
       - name: Build debug APK
-        run: gradle assembleDebug
+        run: gradle assembleDevDebug
 
       - name: Run unit tests
-        run: gradle testDebugUnitTest
+        run: gradle testDevDebugUnitTest
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: podcraft-debug-apk
-          path: src/android/app/build/outputs/apk/debug/*.apk
+          path: src/android/app/build/outputs/apk/dev/debug/*.apk
           retention-days: 30
 
       - name: Upload test results
