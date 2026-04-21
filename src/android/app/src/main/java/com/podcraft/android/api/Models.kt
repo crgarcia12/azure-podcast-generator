@@ -57,7 +57,7 @@ data class Session(
     val id: String,
     val topic: String,
     val title: String,
-    val summary: String,
+    val summary: String? = null,
     val revision: Int,
     val status: String,
     val segments: List<Segment>,
@@ -114,3 +114,8 @@ data class LoginResponse(val user: AuthUser? = null, val message: String? = null
 
 @Serializable
 data class ErrorResponse(val error: String)
+
+// ─── Admin ───────────────────────────────────────────────────────────
+
+@Serializable
+data class AdminUser(val username: String, val role: String, val createdAt: String)

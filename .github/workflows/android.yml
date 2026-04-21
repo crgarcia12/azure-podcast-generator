@@ -40,9 +40,20 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug
 
+      - name: Run unit tests
+        run: gradle testDebugUnitTest
+
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
           name: podcraft-debug-apk
           path: src/android/app/build/outputs/apk/debug/*.apk
           retention-days: 30
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: src/android/app/build/reports/tests/
+          retention-days: 14

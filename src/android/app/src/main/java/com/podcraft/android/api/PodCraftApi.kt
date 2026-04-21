@@ -51,4 +51,8 @@ interface PodCraftApi {
         @Path("sessionId") sessionId: String,
         @Path("segmentId") segmentId: String,
     ): Response<ResponseBody>
+
+    // Admin
+    @GET("/api/admin/users")
+    suspend fun getAdminUsers(): Response<List<AdminUser>>
 }
