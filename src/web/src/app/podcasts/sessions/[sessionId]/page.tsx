@@ -1,13 +1,15 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '../../../lib/api';
-import { useInteractiveSession } from '../../../hooks/useInteractiveSession';
+import { useInteractiveSession, ChatMessage as ChatMessageType } from '../../../hooks/useInteractiveSession';
 import SegmentPlayer from '../../../components/SegmentPlayer';
 import InterruptInput from '../../../components/InterruptInput';
 import SessionTranscript from '../../../components/SessionTranscript';
+import ChatMessage from '../../../components/ChatMessage';
+import TypingIndicator from '../../../components/TypingIndicator';
 
 export default function SessionPlayerPage() {
   const router = useRouter();
@@ -15,16 +17,19 @@ export default function SessionPlayerPage() {
   const sessionId = typeof params.sessionId === 'string' ? params.sessionId : params.sessionId?.[0] ?? '';
   const {
     session,
+    chatMessages,
     loading,
     error,
     interruptLoading,
     clearError,
     loadSession,
     getSegmentAudioUrl,
-    submitInterrupt,
+    sendChatMessage,
   } = useInteractiveSession();
   const [authChecked, setAuthChecked] = useState(false);
   const [currentSegmentIndex, setCurrentSegmentIndex] = useState(0);
+  const [showTranscript, setShowTranscript] = useState(false);
+  const chatBottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     apiFetch('/api/auth/me')
@@ -39,22 +44,27 @@ export default function SessionPlayerPage() {
       .catch(() => router.push('/login'));
   }, [router, sessionId, loadSession]);
 
-  const handleInterrupt = useCallback(async (text: string, inputMethod: 'voice' | 'text') => {
+  // Auto-scroll chat to bottom
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, interruptLoading]);
+
+  const handleChatSubmit = useCallback(async (text: string, inputMethod: 'voice' | 'text') => {
     if (!session) return;
 
     const currentSegment = session.segments[currentSegmentIndex];
     if (!currentSegment) return;
 
     clearError();
-    const updated = await submitInterrupt({
+    const updated = await sendChatMessage({
       sessionId: session.id,
-      questionText: text,
+      message: text,
       inputMethod,
       afterSegmentId: currentSegment.id,
     });
 
     if (updated) {
-      // Jump to the first new segment (right after the interrupt point)
+      // Jump to the first new segment
       const activeSegments = updated.segments;
       const newStart = activeSegments.findIndex(
         (s: { generatedAfterInterrupt?: string }) =>
@@ -64,7 +74,7 @@ export default function SessionPlayerPage() {
         setCurrentSegmentIndex(newStart);
       }
     }
-  }, [session, currentSegmentIndex, clearError, submitInterrupt]);
+  }, [session, currentSegmentIndex, clearError, sendChatMessage]);
 
   if (!authChecked || (loading && !session)) {
     return (
@@ -95,7 +105,7 @@ export default function SessionPlayerPage() {
   return (
     <div className="mx-auto max-w-3xl px-4 py-6 sm:px-6">
       {/* Header */}
-      <div className="mb-6">
+      <div className="mb-4">
         <Link
           href="/podcasts/sessions"
           className="text-sm text-gray-500 hover:text-gray-700 transition"
@@ -110,7 +120,7 @@ export default function SessionPlayerPage() {
           <span>{session.segments.length} segments</span>
           {session.interrupts.length > 0 && (
             <span className="text-amber-500">
-              {session.interrupts.length} interrupt{session.interrupts.length !== 1 ? 's' : ''}
+              {session.interrupts.length} edit{session.interrupts.length !== 1 ? 's' : ''}
             </span>
           )}
           <span>Rev {session.revision}</span>
@@ -139,30 +149,68 @@ export default function SessionPlayerPage() {
         />
       </div>
 
-      {/* Interrupt loading indicator */}
-      {interruptLoading && (
-        <div className="mb-4 flex items-center gap-2 rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-700">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
-          Processing your question — the host is incorporating it into the interview…
+      {/* Chat Panel */}
+      <div className="mb-4 rounded-2xl border border-gray-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-gray-100 px-4 py-3">
+          <h2 className="text-sm font-semibold text-gray-700">
+            Episode Editor
+          </h2>
+          <span className="text-xs text-gray-400">
+            {chatMessages.length > 0 ? `${chatMessages.length} message${chatMessages.length !== 1 ? 's' : ''}` : 'Ask a question to edit the episode'}
+          </span>
         </div>
-      )}
 
-      {/* Interrupt input */}
-      <div className="mb-4">
-        <InterruptInput
-          onSubmit={handleInterrupt}
-          disabled={interruptLoading}
-          loading={interruptLoading}
-        />
+        {/* Chat messages */}
+        {chatMessages.length > 0 && (
+          <div className="max-h-64 overflow-y-auto px-4 py-3">
+            {chatMessages.map((msg: ChatMessageType) => (
+              <ChatMessage
+                key={msg.id}
+                role={msg.role}
+                content={msg.content}
+              />
+            ))}
+            <TypingIndicator visible={interruptLoading} />
+            <div ref={chatBottomRef} />
+          </div>
+        )}
+
+        {/* Processing indicator */}
+        {interruptLoading && chatMessages.length === 0 && (
+          <div className="px-4 py-3">
+            <div className="flex items-center gap-2 text-sm text-violet-700">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
+              Processing your edit…
+            </div>
+          </div>
+        )}
+
+        {/* Input (uses InterruptInput for voice/driving mode support) */}
+        <div className="border-t border-gray-100 p-3">
+          <InterruptInput
+            onSubmit={handleChatSubmit}
+            disabled={interruptLoading}
+            loading={interruptLoading}
+          />
+        </div>
       </div>
 
-      {/* Transcript */}
-      <SessionTranscript
-        segments={session.segments}
-        interrupts={session.interrupts}
-        currentSegmentIndex={currentSegmentIndex}
-        onSegmentClick={setCurrentSegmentIndex}
-      />
+      {/* Transcript toggle */}
+      <button
+        onClick={() => setShowTranscript(!showTranscript)}
+        className="mb-2 text-sm text-violet-600 hover:text-violet-800 font-medium transition"
+      >
+        {showTranscript ? '▼ Hide Full Transcript' : '▶ Show Full Transcript'}
+      </button>
+
+      {showTranscript && (
+        <SessionTranscript
+          segments={session.segments}
+          interrupts={session.interrupts}
+          currentSegmentIndex={currentSegmentIndex}
+          onSegmentClick={setCurrentSegmentIndex}
+        />
+      )}
     </div>
   );
 }

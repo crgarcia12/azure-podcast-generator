@@ -15,6 +15,7 @@ import {
   type PodcastSegment,
 } from '../models/session-store.js';
 import { PODCAST_TOPIC_MAX_LENGTH } from '../services/podcast-service.js';
+import { getChatMessages, addChatMessage } from '../models/chat-store.js';
 
 // ─── Response Types ──────────────────────────────────────────────────
 
@@ -116,7 +117,8 @@ export function mapSessionEndpoints(
         return;
       }
 
-      res.json({ session: toSessionResponse(session) });
+      const chatMessages = getChatMessages(session.id);
+      res.json({ session: toSessionResponse(session), chatMessages });
     } catch (error) {
       logger.error({ err: error, userId: req.user?.sub }, 'Failed to get session');
       res.status(500).json({ error: 'Unable to load session right now' });
@@ -251,6 +253,106 @@ export function mapSessionEndpoints(
       }
     },
   );
+
+  // Get chat messages for a session
+  app.get('/api/podcasts/sessions/:sessionId/chat', authMiddleware, async (req, res) => {
+    try {
+      const session = sessionService.getSession({
+        sessionId: paramStr(req.params.sessionId),
+        userId: req.user!.sub,
+      });
+      if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      const messages = getChatMessages(session.id);
+      res.json({ messages });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to get chat messages');
+      res.status(500).json({ error: 'Unable to load chat messages' });
+    }
+  });
+
+  // Send a chat message (triggers interrupt)
+  app.post('/api/podcasts/sessions/:sessionId/chat', authMiddleware, async (req, res) => {
+    const { message, inputMethod, afterSegmentId, clientRequestId } = req.body ?? {};
+
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    const trimmedMessage = message.trim();
+    if (trimmedMessage.length < SESSION_LIMITS.questionMinLength) {
+      res.status(400).json({ error: `Message must be at least ${SESSION_LIMITS.questionMinLength} characters` });
+      return;
+    }
+    if (trimmedMessage.length > SESSION_LIMITS.questionMaxLength) {
+      res.status(400).json({ error: `Message must be ${SESSION_LIMITS.questionMaxLength} characters or fewer` });
+      return;
+    }
+    if (typeof afterSegmentId !== 'string' || !afterSegmentId) {
+      res.status(400).json({ error: 'afterSegmentId is required' });
+      return;
+    }
+    if (typeof clientRequestId !== 'string' || !clientRequestId) {
+      res.status(400).json({ error: 'clientRequestId is required' });
+      return;
+    }
+    const resolvedInputMethod = inputMethod === 'voice' ? 'voice' : 'text';
+
+    try {
+      const userMsg = addChatMessage({
+        sessionId: paramStr(req.params.sessionId),
+        role: 'user',
+        content: trimmedMessage,
+      });
+
+      const result = await sessionService.processInterrupt({
+        sessionId: paramStr(req.params.sessionId),
+        userId: req.user!.sub,
+        questionText: trimmedMessage,
+        inputMethod: resolvedInputMethod,
+        afterSegmentId,
+        clientRequestId,
+      });
+
+      const newSegCount = result.newSegments.length;
+      const assistantContent = newSegCount > 0
+        ? `Got it! I've updated the episode based on your feedback. ${newSegCount} new segment${newSegCount !== 1 ? 's' : ''} generated after your edit point.`
+        : 'Your edit has been noted. The episode continues from the current point.';
+
+      const assistantMsg = addChatMessage({
+        sessionId: paramStr(req.params.sessionId),
+        role: 'assistant',
+        content: assistantContent,
+        interruptId: result.session.interrupts[result.session.interrupts.length - 1]?.id,
+      });
+
+      res.json({
+        session: toSessionResponse(result.session),
+        chatMessages: [userMsg, assistantMsg],
+      });
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof InterruptConflictError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof SegmentNotFoundError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof SessionLimitError) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      logger.error({ err: error, sessionId: paramStr(req.params.sessionId) }, 'Chat interrupt failed');
+      res.status(500).json({ error: 'Unable to process your edit right now' });
+    }
+  });
 
   // Test-only: clear sessions for e2e isolation
   if (process.env.NODE_ENV !== 'production') {
