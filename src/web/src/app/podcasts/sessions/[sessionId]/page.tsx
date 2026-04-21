@@ -173,28 +173,11 @@ export default function SessionPlayerPage() {
           currentSegmentIndex={currentSegmentIndex}
           onSegmentChange={setCurrentSegmentIndex}
           onPlayingChange={handlePlayingChange}
+          onInteract={handleEditClick}
           autoPlay={autoPlayAfterEdit}
           disabled={interruptLoading}
         />
       </div>
-
-      {/* Pause-to-edit prompt */}
-      {!playing && mode === 'listening' && !interruptLoading && (
-        <div className="mb-3">
-          <button
-            onClick={handleEditClick}
-            className="w-full rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50 px-4 py-4 text-center transition hover:border-violet-400 hover:bg-violet-100"
-          >
-            <div className="flex items-center justify-center gap-2">
-              <svg className="h-5 w-5 text-violet-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              <span className="text-sm font-semibold text-violet-700">Edit Episode Flow</span>
-            </div>
-            <p className="mt-1 text-xs text-violet-500">Redirect the conversation from this point</p>
-          </button>
-        </div>
-      )}
 
       {/* Editing mode */}
       {mode === 'editing' && (
@@ -243,12 +226,24 @@ export default function SessionPlayerPage() {
         </details>
       )}
 
-      <button
-        onClick={() => setShowTranscript(!showTranscript)}
-        className="mb-2 text-sm text-violet-600 hover:text-violet-800 font-medium transition"
-      >
-        {showTranscript ? '▼ Hide Full Transcript' : '▶ Show Full Transcript'}
-      </button>
+      <div className="flex items-center gap-3 mb-2">
+        <button
+          onClick={() => setShowTranscript(!showTranscript)}
+          className="text-sm text-violet-600 hover:text-violet-800 font-medium transition"
+        >
+          {showTranscript ? '▼ Hide Full Transcript' : '▶ Show Full Transcript'}
+        </button>
+        <a
+          href={`${process.env.NEXT_PUBLIC_API_URL || ''}/api/podcasts/sessions/${session.id}/export-audio`}
+          download
+          className="ml-auto flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200"
+        >
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+          </svg>
+          Export Audio
+        </a>
+      </div>
 
       {showTranscript && (
         <SessionTranscript

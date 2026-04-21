@@ -113,6 +113,14 @@ export default function SegmentPlayer({
     }
   }, [playing]);
 
+  const handleInteract = useCallback(() => {
+    if (audioRef.current && playing) {
+      audioRef.current.pause();
+      setPlaying(false);
+    }
+    onInteract?.();
+  }, [playing, onInteract]);
+
   const goToPrev = useCallback(() => {
     if (currentSegmentIndex > 0) onSegmentChange(currentSegmentIndex - 1);
   }, [currentSegmentIndex, onSegmentChange]);
@@ -204,11 +212,11 @@ export default function SegmentPlayer({
         </div>
       )}
 
-      <div className="flex items-center justify-center gap-4 p-4">
+      <div className="flex items-center justify-center gap-3 p-4">
         <button
           onClick={goToPrev}
           disabled={currentSegmentIndex === 0 || disabled}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:opacity-30"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:opacity-30"
           aria-label="Previous segment"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
@@ -240,10 +248,23 @@ export default function SegmentPlayer({
           )}
         </button>
 
+        {onInteract && (
+          <button
+            onClick={handleInteract}
+            disabled={disabled || !currentSegment}
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-violet-100 text-violet-700 shadow transition hover:bg-violet-200 disabled:opacity-30"
+            aria-label="Interact with episode"
+          >
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+          </button>
+        )}
+
         <button
           onClick={goToNext}
           disabled={currentSegmentIndex >= segments.length - 1 || disabled}
-          className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:opacity-30"
+          className="flex h-11 w-11 items-center justify-center rounded-full bg-gray-100 text-gray-700 transition hover:bg-gray-200 disabled:opacity-30"
           aria-label="Next segment"
         >
           <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
