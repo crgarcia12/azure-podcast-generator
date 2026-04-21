@@ -118,7 +118,7 @@ fun PlayerScreen(sessionId: String, onBack: () -> Unit) {
         ) {
             // Session info
             Text(
-                text = sess.summary,
+                text = sess.summary ?: sess.topic,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
