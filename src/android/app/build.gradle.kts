@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -7,7 +9,7 @@ plugins {
 
 // Read version from version.properties
 val versionPropsFile = rootProject.file("version.properties")
-val versionProps = java.util.Properties()
+val versionProps = Properties()
 if (versionPropsFile.exists()) {
     versionProps.load(versionPropsFile.inputStream())
 }
@@ -31,7 +33,7 @@ android {
         create("release") {
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
-                val keystoreProps = java.util.Properties()
+                val keystoreProps = Properties()
                 keystoreProps.load(keystorePropsFile.inputStream())
                 storeFile = file(keystoreProps.getProperty("STORE_FILE", "release.keystore"))
                 storePassword = keystoreProps.getProperty("STORE_PASSWORD", "")
