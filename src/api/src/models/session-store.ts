@@ -40,6 +40,7 @@ export interface PodcastSession {
   pendingInterruptId?: string;
   contextSummary?: string;
   lastSegmentIndex: number;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +52,7 @@ export interface PodcastSessionSummary {
   segmentCount: number;
   interruptCount: number;
   status: SessionStatus;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -78,6 +80,7 @@ interface SessionRow {
   context_summary: string | null;
   pending_interrupt_id: string | null;
   last_segment_index: number;
+  favorite: number;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +133,7 @@ function loadSession(sessionId: string): PodcastSession | undefined {
     contextSummary: row.context_summary ?? undefined,
     pendingInterruptId: row.pending_interrupt_id ?? undefined,
     lastSegmentIndex: row.last_segment_index,
+    favorite: row.favorite === 1,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     segments: segments.map((s) => ({
@@ -157,13 +161,13 @@ function persistSession(session: PodcastSession): void {
   const db = getDatabase();
   // Use ON CONFLICT UPDATE to avoid DELETE+INSERT which triggers ON DELETE CASCADE
   db.prepare(`
-    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, last_segment_index, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, last_segment_index, favorite, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id, topic = excluded.topic, title = excluded.title,
       summary = excluded.summary, revision = excluded.revision, status = excluded.status,
       context_summary = excluded.context_summary, pending_interrupt_id = excluded.pending_interrupt_id,
-      last_segment_index = excluded.last_segment_index,
+      last_segment_index = excluded.last_segment_index, favorite = excluded.favorite,
       created_at = excluded.created_at, updated_at = excluded.updated_at
   `).run(
     session.id,
@@ -176,6 +180,7 @@ function persistSession(session: PodcastSession): void {
     session.contextSummary ?? null,
     session.pendingInterruptId ?? null,
     session.lastSegmentIndex,
+    session.favorite ? 1 : 0,
     session.createdAt,
     session.updatedAt,
   );
@@ -254,6 +259,7 @@ export function createSession(params: {
     })),
     interrupts: [],
     lastSegmentIndex: 0,
+    favorite: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -296,17 +302,18 @@ export function getSessionsByUser(userId: string): PodcastSession[] {
 export function getSessionSummariesByUser(userId: string): PodcastSessionSummary[] {
   const db = getDatabase();
   const rows = db.prepare(`
-    SELECT s.id, s.topic, s.title, s.status, s.created_at, s.updated_at,
+    SELECT s.id, s.topic, s.title, s.status, s.favorite, s.created_at, s.updated_at,
       (SELECT COUNT(*) FROM segments seg WHERE seg.session_id = s.id AND seg.status != 'stale') AS segment_count,
       (SELECT COUNT(*) FROM interrupts i WHERE i.session_id = s.id) AS interrupt_count
     FROM sessions s
     WHERE s.user_id = ?
-    ORDER BY s.created_at DESC
+    ORDER BY s.favorite DESC, s.created_at DESC
   `).all(userId) as Array<{
     id: string;
     topic: string;
     title: string;
     status: string;
+    favorite: number;
     created_at: string;
     updated_at: string;
     segment_count: number;
@@ -320,6 +327,7 @@ export function getSessionSummariesByUser(userId: string): PodcastSessionSummary
     segmentCount: r.segment_count,
     interruptCount: r.interrupt_count,
     status: r.status as SessionStatus,
+    favorite: r.favorite === 1,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   }));
@@ -358,6 +366,15 @@ export function updateSessionProgress(sessionId: string, userId: string, lastSeg
   session.updatedAt = new Date().toISOString();
   persistSession(session);
   return true;
+}
+
+export function toggleSessionFavorite(sessionId: string, userId: string): boolean | undefined {
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return undefined;
+  session.favorite = !session.favorite;
+  session.updatedAt = new Date().toISOString();
+  persistSession(session);
+  return session.favorite;
 }
 
 // ─── Interrupt State Machine ─────────────────────────────────────────

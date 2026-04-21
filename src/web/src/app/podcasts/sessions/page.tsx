@@ -45,6 +45,7 @@ export default function SessionsPage() {
     listSessions,
     createSession,
     deleteSession,
+    toggleFavorite,
   } = useInteractiveSession();
   const [authChecked, setAuthChecked] = useState(false);
   const [topic, setTopic] = useState('');
@@ -172,6 +173,13 @@ export default function SessionsPage() {
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(s.id); }}
+                    className="shrink-0 text-lg transition hover:scale-110"
+                    aria-label={s.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {s.favorite ? '⭐' : '☆'}
+                  </button>
                   <h3 className="truncate text-base font-semibold text-gray-900 group-hover:text-violet-700">
                     {s.topic}
                   </h3>

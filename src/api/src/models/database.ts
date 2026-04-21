@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   context_summary TEXT,
   pending_interrupt_id TEXT,
   last_segment_index INTEGER NOT NULL DEFAULT 0,
+  favorite INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -76,6 +77,17 @@ DROP TABLE IF EXISTS users;
 
 function applySchema(database: Database.Database): void {
   database.exec(SCHEMA);
+  // Migrations for existing databases
+  applyMigrations(database);
+}
+
+function applyMigrations(database: Database.Database): void {
+  // Add favorite column if missing (for databases created before this migration)
+  const cols = database.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  const colNames = new Set(cols.map((c) => c.name));
+  if (!colNames.has('favorite')) {
+    database.exec("ALTER TABLE sessions ADD COLUMN favorite INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 export function getDatabase(dbPath?: string): Database.Database {

@@ -12,6 +12,7 @@ import {
   SESSION_LIMITS,
   getActiveSegments,
   updateSessionProgress,
+  toggleSessionFavorite,
   type PodcastSession,
   type PodcastSegment,
 } from '../models/session-store.js';
@@ -171,6 +172,21 @@ export function mapSessionEndpoints(
     } catch (error) {
       logger.error({ err: error, userId: req.user?.sub }, 'Failed to update session progress');
       res.status(500).json({ error: 'Unable to update progress' });
+    }
+  });
+
+  // Toggle session favorite
+  app.post('/api/podcasts/sessions/:sessionId/favorite', authMiddleware, async (req, res) => {
+    try {
+      const result = toggleSessionFavorite(paramStr(req.params.sessionId), req.user!.sub);
+      if (result === undefined) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      res.json({ favorite: result });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to toggle favorite');
+      res.status(500).json({ error: 'Unable to toggle favorite' });
     }
   });
 

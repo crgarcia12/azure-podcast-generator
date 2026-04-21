@@ -32,6 +32,7 @@ export interface Session {
   revision: number;
   status: string;
   lastSegmentIndex: number;
+  favorite: boolean;
   segments: Segment[];
   interrupts: Interrupt[];
   createdAt: string;
@@ -45,6 +46,7 @@ export interface SessionSummary {
   segmentCount: number;
   interruptCount: number;
   status: string;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -294,6 +296,24 @@ export function useInteractiveSession() {
     }
   }, []);
 
+  const toggleFavorite = useCallback(async (sessionId: string) => {
+    try {
+      const res = await apiFetch(`/api/podcasts/sessions/${sessionId}/favorite`, {
+        method: 'POST',
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, favorite: body.favorite } : s)),
+      );
+      if (session?.id === sessionId) {
+        setSession((prev) => prev ? { ...prev, favorite: body.favorite } : prev);
+      }
+    } catch {
+      // Silent fail
+    }
+  }, [session]);
+
   return {
     session,
     sessions,
@@ -310,5 +330,6 @@ export function useInteractiveSession() {
     submitInterrupt,
     sendChatMessage,
     updateProgress,
+    toggleFavorite,
   };
 }
