@@ -35,6 +35,7 @@ export default function SessionPlayerPage() {
   const [mode, setMode] = useState<Mode>('listening');
   const [playing, setPlaying] = useState(false);
   const [autoPlayAfterEdit, setAutoPlayAfterEdit] = useState(false);
+  const [autoStartVoice, setAutoStartVoice] = useState(false);
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const progressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -79,10 +80,12 @@ export default function SessionPlayerPage() {
 
   const handleEditClick = useCallback(() => {
     setMode('editing');
+    setAutoStartVoice(true);
   }, []);
 
   const handleCancelEdit = useCallback(() => {
     setMode('listening');
+    setAutoStartVoice(false);
   }, []);
 
   const handleChatSubmit = useCallback(async (text: string, inputMethod: 'voice' | 'text') => {
@@ -109,6 +112,7 @@ export default function SessionPlayerPage() {
       }
       setMode('listening');
       setAutoPlayAfterEdit(true);
+      setAutoStartVoice(false);
     }
   }, [session, currentSegmentIndex, clearError, sendChatMessage]);
 
@@ -207,7 +211,7 @@ export default function SessionPlayerPage() {
           )}
 
           <div className="border-t border-violet-100 p-3">
-            <InterruptInput onSubmit={handleChatSubmit} disabled={interruptLoading} loading={interruptLoading} />
+            <InterruptInput onSubmit={handleChatSubmit} disabled={interruptLoading} loading={interruptLoading} autoStartVoice={autoStartVoice} />
           </div>
         </div>
       )}

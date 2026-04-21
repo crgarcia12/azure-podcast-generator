@@ -34,6 +34,7 @@ export default function SegmentPlayer({
   const [audioUrls, setAudioUrls] = useState<Map<string, string>>(new Map());
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [playbackRate, setPlaybackRate] = useState(1);
   const prefetchingRef = useRef<Set<string>>(new Set());
   const autoPlayRef = useRef(autoPlay);
 
@@ -42,6 +43,17 @@ export default function SegmentPlayer({
 
   useEffect(() => { autoPlayRef.current = autoPlay; }, [autoPlay]);
   useEffect(() => { onPlayingChange?.(playing); }, [playing, onPlayingChange]);
+  useEffect(() => {
+    if (audioRef.current) audioRef.current.playbackRate = playbackRate;
+  }, [playbackRate]);
+
+  const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2];
+  const cyclePlaybackRate = useCallback(() => {
+    setPlaybackRate((prev) => {
+      const idx = PLAYBACK_RATES.indexOf(prev);
+      return PLAYBACK_RATES[(idx + 1) % PLAYBACK_RATES.length];
+    });
+  }, []);
 
   const prefetchAudio = useCallback(async (fromIndex: number) => {
     for (let i = fromIndex; i < Math.min(fromIndex + PREFETCH_COUNT, segments.length); i++) {
@@ -209,6 +221,13 @@ export default function SegmentPlayer({
             />
           </div>
           <span>{formatTime(duration)}</span>
+          <button
+            onClick={cyclePlaybackRate}
+            className="ml-1 rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-bold text-gray-500 transition hover:bg-gray-200"
+            aria-label={`Playback speed ${playbackRate}x`}
+          >
+            {playbackRate}x
+          </button>
         </div>
       )}
 
