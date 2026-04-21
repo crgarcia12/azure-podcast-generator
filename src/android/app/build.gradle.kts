@@ -7,8 +7,9 @@ plugins {
 
 // Read version from version.properties
 val versionPropsFile = rootProject.file("version.properties")
-val versionProps = java.util.Properties().apply {
-    if (versionPropsFile.exists()) load(versionPropsFile.inputStream())
+val versionProps = java.util.Properties()
+if (versionPropsFile.exists()) {
+    versionProps.load(versionPropsFile.inputStream())
 }
 val appVersionCode = versionProps.getProperty("VERSION_CODE", "1").toInt()
 val appVersionName = versionProps.getProperty("VERSION_NAME", "1.0.0")
@@ -30,9 +31,8 @@ android {
         create("release") {
             val keystorePropsFile = rootProject.file("keystore.properties")
             if (keystorePropsFile.exists()) {
-                val keystoreProps = java.util.Properties().apply {
-                    load(keystorePropsFile.inputStream())
-                }
+                val keystoreProps = java.util.Properties()
+                keystoreProps.load(keystorePropsFile.inputStream())
                 storeFile = file(keystoreProps.getProperty("STORE_FILE", "release.keystore"))
                 storePassword = keystoreProps.getProperty("STORE_PASSWORD", "")
                 keyAlias = keystoreProps.getProperty("KEY_ALIAS", "podcraft")
@@ -51,7 +51,6 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:5001\"")
         }
         release {
             isMinifyEnabled = true
@@ -61,7 +60,6 @@ android {
                 "proguard-rules.pro"
             )
             signingConfig = signingConfigs.getByName("release")
-            buildConfigField("String", "API_BASE_URL", "\"https://podcraft.azurecontainerapps.io\"")
         }
     }
 
@@ -75,7 +73,7 @@ android {
         }
         create("prod") {
             dimension = "environment"
-            // Uses the build type's API_BASE_URL
+            buildConfigField("String", "API_BASE_URL", "\"https://podcraft.azurecontainerapps.io\"")
         }
     }
 

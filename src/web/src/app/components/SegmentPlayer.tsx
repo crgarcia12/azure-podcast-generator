@@ -10,6 +10,7 @@ interface SegmentPlayerProps {
   currentSegmentIndex: number;
   onSegmentChange: (index: number) => void;
   onPlayingChange?: (playing: boolean) => void;
+  onInteract?: () => void;
   autoPlay?: boolean;
   disabled?: boolean;
 }
@@ -23,6 +24,7 @@ export default function SegmentPlayer({
   currentSegmentIndex,
   onSegmentChange,
   onPlayingChange,
+  onInteract,
   autoPlay = false,
   disabled,
 }: SegmentPlayerProps) {
