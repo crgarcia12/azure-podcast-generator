@@ -11,6 +11,7 @@ RUN apt-get update \
         gh \
         lsb-release \
         python3-pip \
+        tmux \
     && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && curl -fsSL https://aka.ms/install-azd.sh | bash \
     && curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh \

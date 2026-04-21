@@ -132,7 +132,7 @@ The AKS deployment also includes an internal `devbox` workload for cluster-side 
 - It is **not** exposed publicly through ingress.
 - It uses a persistent volume mounted at `/workspace`, so files survive pod restarts and redeploys.
 - On first start it bootstraps the repo into `/workspace/azure-podcast-generator`.
-- The image includes Azure CLI, Azure Developer CLI, GitHub CLI, and GitHub Copilot CLI.
+- The image includes Azure CLI, Azure Developer CLI, GitHub CLI, GitHub Copilot CLI, and `tmux` for long-running terminal sessions.
 - It is useful for live troubleshooting, running commands close to the cluster, and keeping scratch files inside AKS.
 
 Attach to it with:
