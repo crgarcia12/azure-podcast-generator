@@ -383,6 +383,53 @@ export function mapSessionEndpoints(
     }
   });
 
+  // Export full episode audio (all active segments concatenated)
+  app.get(
+    '/api/podcasts/sessions/:sessionId/export-audio',
+    authMiddleware,
+    async (req, res) => {
+      try {
+        const session = sessionService.getSession({
+          sessionId: paramStr(req.params.sessionId),
+          userId: req.user!.sub,
+        });
+
+        if (!session) {
+          res.status(404).json({ error: 'Session not found' });
+          return;
+        }
+
+        const activeSegs = getActiveSegments(session);
+        const buffers: Buffer[] = [];
+        for (const seg of activeSegs) {
+          const audio = await sessionService.getSegmentAudio({
+            sessionId: session.id,
+            segmentId: seg.id,
+            userId: req.user!.sub,
+          });
+          if (audio) {
+            buffers.push(audio);
+          }
+        }
+
+        if (buffers.length === 0) {
+          res.status(400).json({ error: 'No audio available for this session' });
+          return;
+        }
+
+        const combined = Buffer.concat(buffers);
+        const safeTopic = session.topic.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+        res.setHeader('Content-Type', 'audio/wav');
+        res.setHeader('Content-Length', combined.length.toString());
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTopic}.wav"`);
+        res.send(combined);
+      } catch (error) {
+        logger.error({ err: error, userId: req.user?.sub }, 'Failed to export session audio');
+        res.status(500).json({ error: 'Unable to export audio right now' });
+      }
+    },
+  );
+
   // Test-only: clear sessions for e2e isolation
   if (process.env.NODE_ENV !== 'production') {
     app.post('/api/test/reset-sessions', (_req, res) => {

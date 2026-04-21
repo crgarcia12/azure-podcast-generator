@@ -6,13 +6,15 @@ import {
   beginInterrupt,
   completeInterrupt,
   failInterrupt,
-  getSegmentAudio,
-  setSegmentAudio,
   type PodcastSession,
   type PodcastSegment,
   type PodcastSessionSummary,
   type InterruptResult,
 } from '../models/session-store.js';
+import {
+  getSegmentAudio,
+  setSegmentAudio,
+} from '../models/audio-store.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -226,8 +228,8 @@ async function getOrGenerateAudio(
     return null;
   }
 
-  // Check cache first
-  const cached = getSegmentAudio(segmentId);
+  // Check cache / disk first
+  const cached = getSegmentAudio(segmentId, sessionId);
   if (cached) {
     return cached;
   }

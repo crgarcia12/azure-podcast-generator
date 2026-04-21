@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { getDatabase } from './database.js';
+import { deleteSessionAudio, clearAllAudio } from './audio-store.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -62,7 +63,6 @@ export const SESSION_LIMITS = {
   maxInterruptsPerSession: 20,
   questionMinLength: 5,
   questionMaxLength: 500,
-  audioCacheMaxPerSession: 50,
 } as const;
 
 // ─── DB Row Types ────────────────────────────────────────────────────
@@ -103,11 +103,6 @@ interface InterruptRow {
   input_method: string;
   created_at: string;
 }
-
-// ─── Audio Cache (in-memory, regeneratable) ──────────────────────────
-
-const audioCache = new Map<string, Buffer>();
-const audioLruOrder = new Map<string, string[]>(); // sessionId → segmentId[]
 
 // ─── DB Helpers ──────────────────────────────────────────────────────
 
@@ -337,12 +332,8 @@ export function deleteSession(sessionId: string, userId: string): boolean {
     return false;
   }
 
-  // Evict audio for this session's segments
-  const segments = db.prepare('SELECT id FROM segments WHERE session_id = ?').all(sessionId) as Array<{ id: string }>;
-  for (const seg of segments) {
-    audioCache.delete(seg.id);
-  }
-  audioLruOrder.delete(sessionId);
+  // Remove persisted audio for this session
+  deleteSessionAudio(sessionId);
 
   // CASCADE handles segments/interrupts
   db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
@@ -452,12 +443,11 @@ export function completeInterrupt(
   session.revision += 1;
   const now = new Date().toISOString();
 
-  // Mark segments after the interrupt point as stale and evict their audio
+  // Mark segments after the interrupt point as stale
   const afterIndex = afterSegment.index;
   for (const seg of session.segments) {
     if (seg.index > afterIndex && seg.status !== 'stale') {
       seg.status = 'stale';
-      audioCache.delete(seg.id);
     }
   }
 
@@ -496,35 +486,6 @@ export function failInterrupt(session: PodcastSession): void {
   updateSession(session);
 }
 
-// ─── Audio Cache ─────────────────────────────────────────────────────
-
-export function getSegmentAudio(segmentId: string): Buffer | undefined {
-  return audioCache.get(segmentId);
-}
-
-export function setSegmentAudio(sessionId: string, segmentId: string, audio: Buffer): void {
-  const order = audioLruOrder.get(sessionId) ?? [];
-
-  // Remove existing entry to refresh position
-  const existingIndex = order.indexOf(segmentId);
-  if (existingIndex !== -1) {
-    order.splice(existingIndex, 1);
-  }
-
-  order.push(segmentId);
-
-  // Evict oldest if over limit
-  while (order.length > SESSION_LIMITS.audioCacheMaxPerSession) {
-    const evicted = order.shift();
-    if (evicted) {
-      audioCache.delete(evicted);
-    }
-  }
-
-  audioLruOrder.set(sessionId, order);
-  audioCache.set(segmentId, audio);
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 export function getActiveSegments(session: PodcastSession): PodcastSegment[] {
@@ -539,8 +500,7 @@ export function clearSessions(): void {
   db.prepare('DELETE FROM interrupts').run();
   db.prepare('DELETE FROM segments').run();
   db.prepare('DELETE FROM sessions').run();
-  audioCache.clear();
-  audioLruOrder.clear();
+  clearAllAudio();
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────

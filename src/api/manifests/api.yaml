@@ -46,6 +46,8 @@ spec:
               value: "8080"
             - name: DB_PATH
               value: "/data/podcast.db"
+            - name: AUDIO_DIR
+              value: "/data/audio"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
