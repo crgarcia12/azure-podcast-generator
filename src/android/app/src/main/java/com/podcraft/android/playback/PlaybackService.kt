@@ -188,7 +188,7 @@ class PlaybackService : MediaLibraryService() {
         }
 
         override fun onSetMediaItems(
-            mediaSession: MediaLibrarySession,
+            mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: MutableList<MediaItem>,
             startIndex: Int,
