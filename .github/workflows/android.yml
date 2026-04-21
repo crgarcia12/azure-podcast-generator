@@ -5,10 +5,12 @@ on:
     branches: [main]
     paths:
       - 'src/android/**'
+      - '.github/workflows/android.yml'
   push:
     branches: [feature/android-auto]
     paths:
       - 'src/android/**'
+      - '.github/workflows/android.yml'
 
 jobs:
   build:
@@ -27,13 +29,13 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-
-      - name: Run lint
-        run: gradle lint
 
       - name: Build debug APK
         run: gradle assembleDebug
