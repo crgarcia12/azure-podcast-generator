@@ -133,6 +133,7 @@ The AKS deployment also includes an internal `devbox` workload for cluster-side 
 - It uses a persistent volume mounted at `/workspace`, so files survive pod restarts and redeploys.
 - On first start it bootstraps the repo into `/workspace/azure-podcast-generator`.
 - The image includes Azure CLI, Azure Developer CLI, GitHub CLI, GitHub Copilot CLI, and `tmux` for long-running terminal sessions.
+- `tmux` sessions survive local terminal disconnects and `kubectl exec` drops, but not devbox pod restarts or redeploys.
 - It is useful for live troubleshooting, running commands close to the cluster, and keeping scratch files inside AKS.
 
 Attach to it with:
@@ -145,6 +146,54 @@ Once connected, the project lives at:
 
 ```bash
 cd /workspace/azure-podcast-generator
+```
+
+### Run Copilot in `tmux`
+
+Start an interactive Copilot session that keeps running after your local terminal or `kubectl exec` session disconnects:
+
+```bash
+kubectl exec -it deploy/devbox -n azure-podcast-generator -- bash
+cd /workspace/azure-podcast-generator
+tmux new -s copilot
+copilot --yolo --allow-all --continue -p "continue where you left"
+```
+
+Detach without stopping it by pressing `Ctrl+b`, then `d`.
+
+If the prompt is stored in a multiline file, use:
+
+```bash
+copilot --yolo --allow-all --continue -p "$(< /path/to/prompt.md)"
+```
+
+### Run Copilot in the background with a log file
+
+This starts Copilot in a detached `tmux` session and continuously appends console output to `/workspace/copilot-log.txt`:
+
+```bash
+kubectl exec -it deploy/devbox -n azure-podcast-generator -- bash
+cd /workspace/azure-podcast-generator
+: > /workspace/copilot-log.txt
+tmux kill-session -t copilot 2>/dev/null || true
+tmux new-session -d -s copilot
+tmux pipe-pane -o -t copilot 'cat >> /workspace/copilot-log.txt'
+tmux send-keys -t copilot 'cd /workspace/azure-podcast-generator && copilot --yolo --allow-all --continue -p "continue where you left"' C-m
+```
+
+### Reconnect later
+
+```bash
+kubectl exec -it deploy/devbox -n azure-podcast-generator -- bash
+tmux ls
+tmux attach -t copilot
+tail -f /workspace/copilot-log.txt
+```
+
+To stop the session entirely:
+
+```bash
+tmux kill-session -t copilot
 ```
 
 If you want Azure-backed podcast generation after deployment, make sure the API workload receives the Azure OpenAI and Azure Speech settings expected by the backend.
