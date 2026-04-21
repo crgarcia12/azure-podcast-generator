@@ -171,6 +171,9 @@ class MainActivity : ComponentActivity() {
                                         restoreState = true
                                     }
                                 },
+                                onNavigateToAdmin = {
+                                    navController.navigate("admin")
+                                },
                                 onLogout = { logout() },
                             )
                         }

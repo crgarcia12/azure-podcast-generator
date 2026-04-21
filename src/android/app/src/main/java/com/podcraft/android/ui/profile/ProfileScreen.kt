@@ -24,6 +24,7 @@ import java.util.TimeZone
 @Composable
 fun ProfileScreen(
     onNavigateToStudio: () -> Unit,
+    onNavigateToAdmin: () -> Unit = {},
     onLogout: () -> Unit,
 ) {
     var user by remember { mutableStateOf<AuthUser?>(null) }
@@ -135,6 +136,19 @@ fun ProfileScreen(
                         )
 
                         Spacer(modifier = Modifier.height(32.dp))
+
+                        if (u.role == "admin") {
+                            OutlinedButton(
+                                onClick = onNavigateToAdmin,
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.primary
+                                ),
+                            ) {
+                                Text("🛡️ Admin Panel")
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
 
                         Button(
                             onClick = onNavigateToStudio,
