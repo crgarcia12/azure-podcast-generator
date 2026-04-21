@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PodCraft</string>
+    <string name="login_title">Welcome to PodCraft</string>
+    <string name="login_subtitle">Sign in to listen to your podcasts</string>
+    <string name="username_label">Username</string>
+    <string name="password_label">Password</string>
+    <string name="login_button">Sign in</string>
+    <string name="sessions_title">Your Sessions</string>
+    <string name="no_sessions">No sessions yet — create one on the web</string>
+    <string name="sign_in_prompt">Sign in on your phone to browse podcasts</string>
+    <string name="segment_of">Segment %1$d of %2$d</string>
+    <string name="loading">Loading…</string>
+    <string name="error_login">Invalid username or password</string>
+    <string name="error_network">Network error — check your connection</string>
+</resources>
