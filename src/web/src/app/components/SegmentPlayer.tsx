@@ -47,6 +47,31 @@ export default function SegmentPlayer({
     if (audioRef.current) audioRef.current.playbackRate = playbackRate;
   }, [playbackRate]);
 
+  // Media Session API — lock screen / bluetooth controls
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+    const seg = segments[currentSegmentIndex];
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: seg ? `Segment ${currentSegmentIndex + 1}` : 'Podcast',
+      artist: seg?.hostLine?.slice(0, 60) ?? '',
+      album: 'Interactive Podcast',
+    });
+    navigator.mediaSession.setActionHandler('play', () => {
+      audioRef.current?.play().catch(() => {});
+      setPlaying(true);
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      audioRef.current?.pause();
+      setPlaying(false);
+    });
+    navigator.mediaSession.setActionHandler('previoustrack', () => {
+      if (currentSegmentIndex > 0) onSegmentChange(currentSegmentIndex - 1);
+    });
+    navigator.mediaSession.setActionHandler('nexttrack', () => {
+      if (currentSegmentIndex < segments.length - 1) onSegmentChange(currentSegmentIndex + 1);
+    });
+  }, [currentSegmentIndex, segments, onSegmentChange]);
+
   const PLAYBACK_RATES = [0.75, 1, 1.25, 1.5, 2];
   const cyclePlaybackRate = useCallback(() => {
     setPlaybackRate((prev) => {

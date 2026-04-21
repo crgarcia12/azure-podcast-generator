@@ -190,8 +190,9 @@ export default function SessionsPage() {
                   <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
                     {s.segmentCount} segment{s.segmentCount !== 1 ? 's' : ''}
                   </span>
+                  <span>~{Math.max(1, Math.round(s.segmentCount * 0.5))} min</span>
                   {s.interruptCount > 0 && (
-                    <span className="text-amber-500">{s.interruptCount} interrupt{s.interruptCount !== 1 ? 's' : ''}</span>
+                    <span className="text-amber-500">{s.interruptCount} edit{s.interruptCount !== 1 ? 's' : ''}</span>
                   )}
                   <span>{relativeTime(s.createdAt)}</span>
                 </div>
