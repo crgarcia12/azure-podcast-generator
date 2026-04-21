@@ -10,6 +10,8 @@ services:
     project: ./src/api
     host: aks
     language: ts
+    docker:
+      remoteBuild: true
     k8s:
       deploymentPath: ./manifests-generated
       namespace: azure-podcast-generator
@@ -34,6 +36,8 @@ services:
     project: ./src/devbox
     host: aks
     language: js
+    docker:
+      remoteBuild: true
     k8s:
       deploymentPath: ./manifests-generated
       namespace: azure-podcast-generator
@@ -53,6 +57,8 @@ services:
     project: ./src/web
     host: aks
     language: ts
+    docker:
+      remoteBuild: true
     k8s:
       deploymentPath: ./manifests-generated
       namespace: azure-podcast-generator
