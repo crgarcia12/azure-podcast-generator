@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -26,15 +27,16 @@ fun SessionListScreen(
 ) {
     var sessions by remember { mutableStateOf<List<SessionSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
+    var refreshing by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var topic by remember { mutableStateOf("") }
     var creating by remember { mutableStateOf(false) }
     var showDeleteDialog by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
-    fun loadSessions() {
+    fun loadSessions(isRefresh: Boolean = false) {
         scope.launch {
-            loading = sessions.isEmpty()
+            if (isRefresh) refreshing = true else loading = sessions.isEmpty()
             error = null
             try {
                 val res = ApiClient.get().listSessions()
@@ -51,6 +53,7 @@ fun SessionListScreen(
                 error = "Network error — check your connection"
             }
             loading = false
+            refreshing = false
         }
     }
 
@@ -88,6 +91,20 @@ fun SessionListScreen(
         }
     }
 
+    fun toggleFavorite(sessionId: String) {
+        scope.launch {
+            try {
+                val res = ApiClient.get().toggleFavorite(sessionId)
+                if (res.isSuccessful) {
+                    val isFav = res.body()?.favorite ?: return@launch
+                    sessions = sessions.map {
+                        if (it.id == sessionId) it.copy(favorite = isFav) else it
+                    }
+                }
+            } catch (_: Exception) { }
+        }
+    }
+
     LaunchedEffect(Unit) { loadSessions() }
 
     // Delete confirmation dialog
@@ -121,122 +138,147 @@ fun SessionListScreen(
             )
         }
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+        PullToRefreshBox(
+            isRefreshing = refreshing,
+            onRefresh = { loadSessions(isRefresh = true) },
+            modifier = Modifier.fillMaxSize().padding(padding)
         ) {
-            // Create session card
-            item {
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Start a new interactive podcast",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = topic,
-                                onValueChange = { if (it.length <= 120) topic = it },
-                                modifier = Modifier.weight(1f),
-                                placeholder = { Text("Enter a topic…") },
-                                singleLine = true,
-                                enabled = !creating,
-                                shape = RoundedCornerShape(12.dp)
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Create session card
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Text(
+                                "Start a new interactive podcast",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Button(
-                                onClick = { createSession() },
-                                enabled = !creating && topic.isNotBlank(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                if (creating) {
-                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                                } else {
-                                    Text("Create")
+                            Spacer(Modifier.height(8.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                OutlinedTextField(
+                                    value = topic,
+                                    onValueChange = { if (it.length <= 120) topic = it },
+                                    modifier = Modifier.weight(1f),
+                                    placeholder = { Text("Enter a topic…") },
+                                    singleLine = true,
+                                    enabled = !creating,
+                                    shape = RoundedCornerShape(12.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Button(
+                                    onClick = { createSession() },
+                                    enabled = !creating && topic.isNotBlank(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    if (creating) {
+                                        CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                    } else {
+                                        Text("Create")
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // Error
-            if (error != null) {
-                item {
-                    Card(
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
+                // Error
+                if (error != null) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text(
+                                error!!,
+                                modifier = Modifier.padding(16.dp),
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                        }
+                    }
+                }
+
+                // Loading
+                if (loading && sessions.isEmpty()) {
+                    item {
+                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                            CircularProgressIndicator()
+                        }
+                    }
+                }
+
+                // Empty state
+                if (!loading && sessions.isEmpty()) {
+                    item {
+                        Column(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                Icons.Filled.Mic,
+                                contentDescription = null,
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Text("No sessions yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(
+                                "Create your first interactive podcast above!",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                    }
+                }
+
+                // Favorite sessions section
+                val favorites = sessions.filter { it.favorite }
+                if (favorites.isNotEmpty()) {
+                    item {
                         Text(
-                            error!!,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.onErrorContainer
+                            "⭐ Favorites",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    items(favorites, key = { "fav-${it.id}" }) { session ->
+                        SessionCard(
+                            session = session,
+                            onClick = { onSessionClick(session.id) },
+                            onDelete = { showDeleteDialog = session.id },
+                            onToggleFavorite = { toggleFavorite(session.id) }
                         )
                     }
                 }
-            }
 
-            // Loading
-            if (loading && sessions.isEmpty()) {
-                item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator()
-                    }
-                }
-            }
-
-            // Empty state
-            if (!loading && sessions.isEmpty()) {
-                item {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Icon(
-                            Icons.Filled.Mic,
-                            contentDescription = null,
-                            modifier = Modifier.size(64.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        Text("No sessions yet", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                // All sessions header
+                val nonFavorites = sessions.filter { !it.favorite }
+                if (nonFavorites.isNotEmpty()) {
+                    item {
                         Text(
-                            "Create your first interactive podcast above!",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            if (favorites.isNotEmpty()) "All Sessions" else "Past Sessions",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 8.dp)
+                        )
+                    }
+                    items(nonFavorites, key = { it.id }) { session ->
+                        SessionCard(
+                            session = session,
+                            onClick = { onSessionClick(session.id) },
+                            onDelete = { showDeleteDialog = session.id },
+                            onToggleFavorite = { toggleFavorite(session.id) }
                         )
                     }
                 }
-            }
-
-            // Session header
-            if (sessions.isNotEmpty()) {
-                item {
-                    Text(
-                        "Past Sessions",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-            }
-
-            // Sessions list
-            items(sessions, key = { it.id }) { session ->
-                SessionCard(
-                    session = session,
-                    onClick = { onSessionClick(session.id) },
-                    onDelete = { showDeleteDialog = session.id }
-                )
             }
         }
     }
@@ -246,7 +288,8 @@ fun SessionListScreen(
 private fun SessionCard(
     session: SessionSummary,
     onClick: () -> Unit,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit,
 ) {
     Card(
         onClick = onClick,
@@ -297,6 +340,13 @@ private fun SessionCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+            }
+            IconButton(onClick = onToggleFavorite) {
+                Icon(
+                    if (session.favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
+                    contentDescription = if (session.favorite) "Unfavorite" else "Favorite",
+                    tint = if (session.favorite) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             IconButton(onClick = onDelete) {
                 Icon(

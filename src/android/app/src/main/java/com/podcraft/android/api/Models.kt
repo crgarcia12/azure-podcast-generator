@@ -27,6 +27,7 @@ data class SessionSummary(
     val segmentCount: Int,
     val interruptCount: Int,
     val status: String,
+    val favorite: Boolean = false,
     val createdAt: String,
     val updatedAt: String,
 )
@@ -119,3 +120,37 @@ data class ErrorResponse(val error: String)
 
 @Serializable
 data class AdminUser(val username: String, val role: String, val createdAt: String)
+
+// ─── Chat & Interaction ─────────────────────────────────────────────
+
+@Serializable
+data class ChatMessage(
+    val id: String,
+    val sessionId: String,
+    val role: String,
+    val content: String,
+    val interruptId: String? = null,
+    val createdAt: String,
+)
+
+@Serializable
+data class ChatMessagesResponse(val messages: List<ChatMessage>)
+
+@Serializable
+data class ChatRequest(
+    val message: String,
+    val inputMethod: String = "text",
+    val afterSegmentId: String,
+    val clientRequestId: String,
+)
+
+@Serializable
+data class ChatResponse(
+    val userMessage: ChatMessage? = null,
+    val assistantMessage: ChatMessage? = null,
+    val session: Session? = null,
+    val error: String? = null,
+)
+
+@Serializable
+data class FavoriteResponse(val favorite: Boolean)

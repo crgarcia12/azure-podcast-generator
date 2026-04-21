@@ -161,4 +161,82 @@ class ModelsTest {
         assertEquals("admin", user.username)
         assertEquals("admin", user.role)
     }
+
+    @Test
+    fun `SessionSummary deserializes with favorite field`() {
+        val raw = """{
+            "id":"sess-1","topic":"AI","title":"AI Podcast","segmentCount":3,
+            "interruptCount":1,"status":"ready","favorite":true,
+            "createdAt":"2025-06-01T00:00:00Z","updatedAt":"2025-06-01T01:00:00Z"
+        }"""
+        val summary = json.decodeFromString(SessionSummary.serializer(), raw)
+        assertTrue(summary.favorite)
+    }
+
+    @Test
+    fun `SessionSummary defaults favorite to false`() {
+        val raw = """{
+            "id":"sess-1","topic":"AI","title":"AI Podcast","segmentCount":3,
+            "interruptCount":1,"status":"ready",
+            "createdAt":"2025-06-01T00:00:00Z","updatedAt":"2025-06-01T01:00:00Z"
+        }"""
+        val summary = json.decodeFromString(SessionSummary.serializer(), raw)
+        assertFalse(summary.favorite)
+    }
+
+    @Test
+    fun `ChatMessage deserializes correctly`() {
+        val raw = """{
+            "id":"msg-1","sessionId":"sess-1","role":"user",
+            "content":"What about AI ethics?","createdAt":"2025-06-01T00:00:00Z"
+        }"""
+        val msg = json.decodeFromString(ChatMessage.serializer(), raw)
+        assertEquals("msg-1", msg.id)
+        assertEquals("user", msg.role)
+        assertEquals("What about AI ethics?", msg.content)
+        assertNull(msg.interruptId)
+    }
+
+    @Test
+    fun `ChatMessage deserializes with interruptId`() {
+        val raw = """{
+            "id":"msg-2","sessionId":"sess-1","role":"assistant",
+            "content":"Updated!","interruptId":"int-1","createdAt":"2025-06-01T00:00:00Z"
+        }"""
+        val msg = json.decodeFromString(ChatMessage.serializer(), raw)
+        assertEquals("assistant", msg.role)
+        assertEquals("int-1", msg.interruptId)
+    }
+
+    @Test
+    fun `ChatRequest serializes correctly`() {
+        val req = ChatRequest(
+            message = "Tell me more",
+            inputMethod = "text",
+            afterSegmentId = "seg-5",
+            clientRequestId = "req-123"
+        )
+        val encoded = json.encodeToString(ChatRequest.serializer(), req)
+        assertTrue(encoded.contains("\"message\":\"Tell me more\""))
+        assertTrue(encoded.contains("\"afterSegmentId\":\"seg-5\""))
+        assertTrue(encoded.contains("\"clientRequestId\":\"req-123\""))
+    }
+
+    @Test
+    fun `FavoriteResponse deserializes correctly`() {
+        val raw = """{"favorite":true}"""
+        val resp = json.decodeFromString(FavoriteResponse.serializer(), raw)
+        assertTrue(resp.favorite)
+
+        val raw2 = """{"favorite":false}"""
+        val resp2 = json.decodeFromString(FavoriteResponse.serializer(), raw2)
+        assertFalse(resp2.favorite)
+    }
+
+    @Test
+    fun `ChatMessagesResponse deserializes empty list`() {
+        val raw = """{"messages":[]}"""
+        val resp = json.decodeFromString(ChatMessagesResponse.serializer(), raw)
+        assertTrue(resp.messages.isEmpty())
+    }
 }

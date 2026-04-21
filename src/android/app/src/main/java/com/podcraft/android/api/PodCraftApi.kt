@@ -45,6 +45,18 @@ interface PodCraftApi {
     @DELETE("/api/podcasts/sessions/{sessionId}")
     suspend fun deleteSession(@Path("sessionId") sessionId: String): Response<ResponseBody>
 
+    @POST("/api/podcasts/sessions/{sessionId}/favorite")
+    suspend fun toggleFavorite(@Path("sessionId") sessionId: String): Response<FavoriteResponse>
+
+    @GET("/api/podcasts/sessions/{sessionId}/chat")
+    suspend fun getChatMessages(@Path("sessionId") sessionId: String): Response<ChatMessagesResponse>
+
+    @POST("/api/podcasts/sessions/{sessionId}/chat")
+    suspend fun sendChatMessage(
+        @Path("sessionId") sessionId: String,
+        @Body request: ChatRequest,
+    ): Response<ChatResponse>
+
     @GET("/api/podcasts/sessions/{sessionId}/segments/{segmentId}/audio")
     @Streaming
     suspend fun getSegmentAudio(
