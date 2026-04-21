@@ -5,6 +5,18 @@ metadata:
   annotations:
     azure.workload.identity/client-id: "${API_MANAGED_IDENTITY_CLIENT_ID}"
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: api-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: managed-csi
+  resources:
+    requests:
+      storage: 1Gi
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -32,6 +44,8 @@ spec:
               value: production
             - name: PORT
               value: "8080"
+            - name: DB_PATH
+              value: "/data/podcast.db"
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
@@ -60,6 +74,13 @@ spec:
               port: 8080
             initialDelaySeconds: 15
             periodSeconds: 15
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: api-data
 ---
 apiVersion: v1
 kind: Service

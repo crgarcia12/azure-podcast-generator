@@ -38,6 +38,7 @@ export interface PodcastSession {
   interrupts: UserInterrupt[];
   pendingInterruptId?: string;
   contextSummary?: string;
+  lastSegmentIndex: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -76,6 +77,7 @@ interface SessionRow {
   status: string;
   context_summary: string | null;
   pending_interrupt_id: string | null;
+  last_segment_index: number;
   created_at: string;
   updated_at: string;
 }
@@ -132,6 +134,7 @@ function loadSession(sessionId: string): PodcastSession | undefined {
     status: row.status as SessionStatus,
     contextSummary: row.context_summary ?? undefined,
     pendingInterruptId: row.pending_interrupt_id ?? undefined,
+    lastSegmentIndex: row.last_segment_index,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     segments: segments.map((s) => ({
@@ -159,12 +162,13 @@ function persistSession(session: PodcastSession): void {
   const db = getDatabase();
   // Use ON CONFLICT UPDATE to avoid DELETE+INSERT which triggers ON DELETE CASCADE
   db.prepare(`
-    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, last_segment_index, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id, topic = excluded.topic, title = excluded.title,
       summary = excluded.summary, revision = excluded.revision, status = excluded.status,
       context_summary = excluded.context_summary, pending_interrupt_id = excluded.pending_interrupt_id,
+      last_segment_index = excluded.last_segment_index,
       created_at = excluded.created_at, updated_at = excluded.updated_at
   `).run(
     session.id,
@@ -176,6 +180,7 @@ function persistSession(session: PodcastSession): void {
     session.status,
     session.contextSummary ?? null,
     session.pendingInterruptId ?? null,
+    session.lastSegmentIndex,
     session.createdAt,
     session.updatedAt,
   );
@@ -253,6 +258,7 @@ export function createSession(params: {
       createdAt: now,
     })),
     interrupts: [],
+    lastSegmentIndex: 0,
     createdAt: now,
     updatedAt: now,
   };
@@ -352,6 +358,15 @@ export function updateSession(session: PodcastSession): void {
     db.prepare('DELETE FROM segments WHERE session_id = ?').run(session.id);
     persistSegments(session.id, session.segments);
   })();
+}
+
+export function updateSessionProgress(sessionId: string, userId: string, lastSegmentIndex: number): boolean {
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return false;
+  session.lastSegmentIndex = lastSegmentIndex;
+  session.updatedAt = new Date().toISOString();
+  persistSession(session);
+  return true;
 }
 
 // ─── Interrupt State Machine ─────────────────────────────────────────

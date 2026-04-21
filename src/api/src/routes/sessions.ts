@@ -11,6 +11,7 @@ import {
   SegmentNotFoundError,
   SESSION_LIMITS,
   getActiveSegments,
+  updateSessionProgress,
   type PodcastSession,
   type PodcastSegment,
 } from '../models/session-store.js';
@@ -45,6 +46,7 @@ interface SessionResponse {
   summary: string;
   revision: number;
   status: string;
+  lastSegmentIndex: number;
   segments: SegmentResponse[];
   interrupts: InterruptResponse[];
   createdAt: string;
@@ -142,6 +144,33 @@ export function mapSessionEndpoints(
     } catch (error) {
       logger.error({ err: error, userId: req.user?.sub }, 'Failed to delete session');
       res.status(500).json({ error: 'Unable to delete session right now' });
+    }
+  });
+
+  // Update session progress (last played segment)
+  app.patch('/api/podcasts/sessions/:sessionId', authMiddleware, async (req, res) => {
+    try {
+      const { lastSegmentIndex } = req.body ?? {};
+      if (typeof lastSegmentIndex !== 'number' || lastSegmentIndex < 0) {
+        res.status(400).json({ error: 'lastSegmentIndex must be a non-negative number' });
+        return;
+      }
+
+      const updated = updateSessionProgress(
+        paramStr(req.params.sessionId),
+        req.user!.sub,
+        lastSegmentIndex,
+      );
+
+      if (!updated) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to update session progress');
+      res.status(500).json({ error: 'Unable to update progress' });
     }
   });
 
@@ -384,6 +413,7 @@ function toSessionResponse(session: PodcastSession): SessionResponse {
     summary: session.summary,
     revision: session.revision,
     status: session.status,
+    lastSegmentIndex: session.lastSegmentIndex,
     segments: activeSegments.map((seg) => toSegmentResponse(session.id, seg)),
     interrupts: session.interrupts.map(toInterruptResponse),
     createdAt: session.createdAt,

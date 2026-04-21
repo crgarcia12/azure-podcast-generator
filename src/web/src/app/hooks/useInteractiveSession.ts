@@ -31,6 +31,7 @@ export interface Session {
   summary: string;
   revision: number;
   status: string;
+  lastSegmentIndex: number;
   segments: Segment[];
   interrupts: Interrupt[];
   createdAt: string;
@@ -281,6 +282,18 @@ export function useInteractiveSession() {
     }
   }, [session, evictAudioCache]);
 
+  const updateProgress = useCallback(async (sessionId: string, lastSegmentIndex: number) => {
+    try {
+      await apiFetch(`/api/podcasts/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lastSegmentIndex }),
+      });
+    } catch {
+      // Silent fail — progress tracking is best-effort
+    }
+  }, []);
+
   return {
     session,
     sessions,
@@ -296,5 +309,6 @@ export function useInteractiveSession() {
     getSegmentAudioUrl,
     submitInterrupt,
     sendChatMessage,
+    updateProgress,
   };
 }
