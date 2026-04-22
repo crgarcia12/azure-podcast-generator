@@ -60,6 +60,25 @@ export interface ChatMessage {
   createdAt: string;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+function generateRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    // Fallback for insecure contexts (HTTP without TLS)
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+const CHAT_TIMEOUT_MS = 30_000;
+
+function fetchWithTimeout(url: string, init: RequestInit, timeoutMs = CHAT_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  return apiFetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeoutId));
+}
+
 // ─── Hook ────────────────────────────────────────────────────────────
 
 export function useInteractiveSession() {
@@ -199,10 +218,10 @@ export function useInteractiveSession() {
   }) => {
     setInterruptLoading(true);
     setError(null);
-    const clientRequestId = crypto.randomUUID();
 
     try {
-      const res = await apiFetch(`/api/podcasts/sessions/${params.sessionId}/interrupt`, {
+      const clientRequestId = generateRequestId();
+      const res = await fetchWithTimeout(`/api/podcasts/sessions/${params.sessionId}/interrupt`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -244,10 +263,10 @@ export function useInteractiveSession() {
   }) => {
     setInterruptLoading(true);
     setError(null);
-    const clientRequestId = crypto.randomUUID();
 
     try {
-      const res = await apiFetch(`/api/podcasts/sessions/${params.sessionId}/chat`, {
+      const clientRequestId = generateRequestId();
+      const res = await fetchWithTimeout(`/api/podcasts/sessions/${params.sessionId}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

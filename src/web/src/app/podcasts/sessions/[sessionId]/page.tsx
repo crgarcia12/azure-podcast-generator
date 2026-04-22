@@ -210,6 +210,13 @@ export default function SessionPlayerPage() {
             </div>
           )}
 
+          {!interruptLoading && error && (
+            <div className="mx-4 mt-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
+              {error}
+              <button onClick={clearError} className="ml-2 font-medium underline">Dismiss</button>
+            </div>
+          )}
+
           <div className="border-t border-violet-100 p-3 dark:border-violet-800">
             <InterruptInput onSubmit={handleChatSubmit} disabled={interruptLoading} loading={interruptLoading} autoStartVoice={autoStartVoice} />
           </div>

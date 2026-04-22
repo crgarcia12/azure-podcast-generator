@@ -48,6 +48,7 @@ interface SessionResponse {
   revision: number;
   status: string;
   lastSegmentIndex: number;
+  favorite: boolean;
   segments: SegmentResponse[];
   interrupts: InterruptResponse[];
   createdAt: string;
@@ -477,6 +478,7 @@ function toSessionResponse(session: PodcastSession): SessionResponse {
     revision: session.revision,
     status: session.status,
     lastSegmentIndex: session.lastSegmentIndex,
+    favorite: session.favorite ?? false,
     segments: activeSegments.map((seg) => toSegmentResponse(session.id, seg)),
     interrupts: session.interrupts.map(toInterruptResponse),
     createdAt: session.createdAt,
