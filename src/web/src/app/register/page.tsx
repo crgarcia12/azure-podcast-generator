@@ -95,6 +95,7 @@ export default function RegisterPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
+              autoComplete="username"
               required
             />
           </div>
@@ -108,6 +109,7 @@ export default function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
+              autoComplete="new-password"
               required
             />
           </div>

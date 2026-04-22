@@ -6,6 +6,7 @@ interface InterruptInputProps {
   onSubmit: (text: string, inputMethod: 'voice' | 'text') => void;
   disabled?: boolean;
   loading?: boolean;
+  autoStartVoice?: boolean;
 }
 
 // Web Speech API types (not available in all browsers)
@@ -52,7 +53,7 @@ function getSpeechRecognition(): SpeechRecognitionConstructor | null {
   /* eslint-enable @typescript-eslint/no-explicit-any */
 }
 
-export default function InterruptInput({ onSubmit, disabled, loading }: InterruptInputProps) {
+export default function InterruptInput({ onSubmit, disabled, loading, autoStartVoice }: InterruptInputProps) {
   const [text, setText] = useState('');
   const [recording, setRecording] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -64,6 +65,7 @@ export default function InterruptInput({ onSubmit, disabled, loading }: Interrup
   const [undoTimer, setUndoTimer] = useState<number | null>(null);
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
   const undoTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoStartedRef = useRef(false);
 
   const stopRecording = useCallback(() => {
     if (recognitionRef.current) {
@@ -124,6 +126,19 @@ export default function InterruptInput({ onSubmit, disabled, loading }: Interrup
     recognition.start();
     setRecording(true);
   }, [autoSend, onSubmit]);
+
+  // Auto-start voice recording when entering Interact mode
+  useEffect(() => {
+    if (autoStartVoice && speechSupported && !recording && !disabled && !loading && !autoStartedRef.current) {
+      autoStartedRef.current = true;
+      // Small delay so the UI renders first
+      const timer = setTimeout(() => startRecording(), 300);
+      return () => clearTimeout(timer);
+    }
+    if (!autoStartVoice) {
+      autoStartedRef.current = false;
+    }
+  }, [autoStartVoice, speechSupported, recording, disabled, loading, startRecording]);
 
   const toggleRecording = useCallback(() => {
     if (recording) {

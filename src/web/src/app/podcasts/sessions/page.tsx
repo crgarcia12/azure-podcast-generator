@@ -6,6 +6,35 @@ import Link from 'next/link';
 import { apiFetch } from '../../lib/api';
 import { useInteractiveSession } from '../../hooks/useInteractiveSession';
 
+function relativeTime(dateStr: string): string {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diffSec = Math.max(0, Math.floor((now - then) / 1000));
+
+  if (diffSec < 60) return 'just now';
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}m ago`;
+  const diffHr = Math.floor(diffMin / 60);
+  if (diffHr < 24) return `${diffHr}h ago`;
+  const diffDay = Math.floor(diffHr / 24);
+  if (diffDay < 30) return `${diffDay}d ago`;
+  return new Date(dateStr).toLocaleDateString();
+}
+
+function statusBadge(status: string) {
+  const styles: Record<string, string> = {
+    generating: 'bg-amber-100 text-amber-700',
+    ready: 'bg-green-100 text-green-700',
+    error: 'bg-red-100 text-red-700',
+  };
+  const cls = styles[status] ?? 'bg-gray-100 text-gray-600';
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${cls}`}>
+      {status}
+    </span>
+  );
+}
+
 export default function SessionsPage() {
   const router = useRouter();
   const {
@@ -16,6 +45,7 @@ export default function SessionsPage() {
     listSessions,
     createSession,
     deleteSession,
+    toggleFavorite,
   } = useInteractiveSession();
   const [authChecked, setAuthChecked] = useState(false);
   const [topic, setTopic] = useState('');
@@ -47,6 +77,7 @@ export default function SessionsPage() {
   }
 
   async function handleDelete(sessionId: string) {
+    if (!window.confirm('Delete this episode?')) return;
     await deleteSession(sessionId);
   }
 
@@ -62,12 +93,18 @@ export default function SessionsPage() {
     <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       {/* Header */}
       <div className="mb-8">
-        <div className="flex items-center gap-3 mb-2">
+        <div className="flex items-center justify-between mb-2">
           <Link
             href="/podcasts"
             className="text-sm text-gray-500 hover:text-gray-700 transition"
           >
             ← Back to Studio
+          </Link>
+          <Link
+            href="/podcasts"
+            className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-700"
+          >
+            + New Episode
           </Link>
         </div>
         <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
@@ -131,27 +168,38 @@ export default function SessionsPage() {
           {sessions.map((s) => (
             <div
               key={s.id}
-              className="group flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 transition hover:border-violet-200 hover:shadow-sm"
+              onClick={() => router.push(`/podcasts/sessions/${s.id}`)}
+              className="group relative flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4 cursor-pointer transition hover:border-violet-200 hover:shadow-md"
             >
-              <Link
-                href={`/podcasts/sessions/${s.id}`}
-                className="flex-1 min-w-0"
-              >
-                <h3 className="truncate font-medium text-gray-900 group-hover:text-violet-700">
-                  {s.title}
-                </h3>
-                <p className="mt-0.5 truncate text-sm text-gray-500">{s.topic}</p>
-                <div className="mt-1 flex gap-3 text-xs text-gray-400">
-                  <span>{s.segmentCount} segments</span>
-                  {s.interruptCount > 0 && (
-                    <span className="text-amber-500">{s.interruptCount} interrupts</span>
-                  )}
-                  <span>{new Date(s.createdAt).toLocaleDateString()}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); toggleFavorite(s.id); }}
+                    className="shrink-0 text-lg transition hover:scale-110"
+                    aria-label={s.favorite ? 'Remove from favorites' : 'Add to favorites'}
+                  >
+                    {s.favorite ? '⭐' : '☆'}
+                  </button>
+                  <h3 className="truncate text-base font-semibold text-gray-900 group-hover:text-violet-700">
+                    {s.topic}
+                  </h3>
+                  {statusBadge(s.status)}
                 </div>
-              </Link>
+                <p className="truncate text-sm text-gray-500">{s.title}</p>
+                <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-400">
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                    {s.segmentCount} segment{s.segmentCount !== 1 ? 's' : ''}
+                  </span>
+                  <span>~{Math.max(1, Math.round(s.segmentCount * 0.5))} min</span>
+                  {s.interruptCount > 0 && (
+                    <span className="text-amber-500">{s.interruptCount} edit{s.interruptCount !== 1 ? 's' : ''}</span>
+                  )}
+                  <span>{relativeTime(s.createdAt)}</span>
+                </div>
+              </div>
               <button
-                onClick={(e) => { e.preventDefault(); handleDelete(s.id); }}
-                className="ml-3 rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+                onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
+                className="ml-3 shrink-0 rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
                 aria-label="Delete session"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

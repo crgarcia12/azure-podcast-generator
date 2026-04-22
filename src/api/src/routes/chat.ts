@@ -1,24 +1,16 @@
 import { type Express, type Request, type Response } from 'express';
 
-// Placeholder implementation — replaced during spec2cloud Phase 4
 export function mapChatEndpoints(app: Express): void {
+  // Legacy placeholder — real chat is at /api/podcasts/sessions/:id/chat
   app.post('/api/chat/sessions', (_req: Request, res: Response) => {
-    res.status(201).json({ sessionId: crypto.randomUUID(), createdAt: new Date().toISOString() });
+    res.status(410).json({ error: 'Use /api/podcasts/sessions/:sessionId/chat instead' });
   });
 
-  app.get('/api/chat/sessions/:sessionId', (req: Request, res: Response) => {
-    res.json({ sessionId: req.params.sessionId, messages: [] });
+  app.get('/api/chat/sessions/:sessionId', (_req: Request, res: Response) => {
+    res.status(410).json({ error: 'Use /api/podcasts/sessions/:sessionId/chat instead' });
   });
 
-  app.post('/api/chat/sessions/:sessionId/messages', (req: Request, res: Response) => {
-    const { message } = req.body as { message?: string };
-    if (!message) {
-      res.status(400).json({ error: 'Message is required' });
-      return;
-    }
-    res.json({
-      sessionId: req.params.sessionId,
-      reply: 'This is a placeholder response. Implement during Phase 4.',
-    });
+  app.post('/api/chat/sessions/:sessionId/messages', (_req: Request, res: Response) => {
+    res.status(410).json({ error: 'Use /api/podcasts/sessions/:sessionId/chat instead' });
   });
 }

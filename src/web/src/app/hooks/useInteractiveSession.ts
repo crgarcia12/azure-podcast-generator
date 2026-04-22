@@ -31,6 +31,8 @@ export interface Session {
   summary: string;
   revision: number;
   status: string;
+  lastSegmentIndex: number;
+  favorite: boolean;
   segments: Segment[];
   interrupts: Interrupt[];
   createdAt: string;
@@ -44,8 +46,18 @@ export interface SessionSummary {
   segmentCount: number;
   interruptCount: number;
   status: string;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  interruptId?: string;
+  createdAt: string;
 }
 
 // ─── Hook ────────────────────────────────────────────────────────────
@@ -53,6 +65,7 @@ export interface SessionSummary {
 export function useInteractiveSession() {
   const [session, setSession] = useState<Session | null>(null);
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [interruptLoading, setInterruptLoading] = useState(false);
@@ -123,6 +136,7 @@ export function useInteractiveSession() {
         throw new Error(body.error || 'Session not found');
       }
       setSession(body.session);
+      setChatMessages(body.chatMessages ?? []);
       return body.session as Session;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load session');
@@ -222,9 +236,88 @@ export function useInteractiveSession() {
     }
   }, [session, evictAudioCache]);
 
+  const sendChatMessage = useCallback(async (params: {
+    sessionId: string;
+    message: string;
+    inputMethod: 'voice' | 'text';
+    afterSegmentId: string;
+  }) => {
+    setInterruptLoading(true);
+    setError(null);
+    const clientRequestId = crypto.randomUUID();
+
+    try {
+      const res = await apiFetch(`/api/podcasts/sessions/${params.sessionId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: params.message,
+          inputMethod: params.inputMethod,
+          afterSegmentId: params.afterSegmentId,
+          clientRequestId,
+        }),
+      });
+
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(body.error || 'Failed to send message');
+      }
+
+      // Evict stale audio
+      if (session) {
+        const oldSegmentIds = session.segments
+          .filter((s) => s.index > (session.segments.find((seg) => seg.id === params.afterSegmentId)?.index ?? -1))
+          .map((s) => s.id);
+        evictAudioCache(oldSegmentIds);
+      }
+
+      setSession(body.session);
+      if (body.chatMessages) {
+        setChatMessages((prev) => [...prev, ...body.chatMessages]);
+      }
+      return body.session as Session;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send message');
+      return null;
+    } finally {
+      setInterruptLoading(false);
+    }
+  }, [session, evictAudioCache]);
+
+  const updateProgress = useCallback(async (sessionId: string, lastSegmentIndex: number) => {
+    try {
+      await apiFetch(`/api/podcasts/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lastSegmentIndex }),
+      });
+    } catch {
+      // Silent fail — progress tracking is best-effort
+    }
+  }, []);
+
+  const toggleFavorite = useCallback(async (sessionId: string) => {
+    try {
+      const res = await apiFetch(`/api/podcasts/sessions/${sessionId}/favorite`, {
+        method: 'POST',
+      });
+      if (!res.ok) return;
+      const body = await res.json();
+      setSessions((prev) =>
+        prev.map((s) => (s.id === sessionId ? { ...s, favorite: body.favorite } : s)),
+      );
+      if (session?.id === sessionId) {
+        setSession((prev) => prev ? { ...prev, favorite: body.favorite } : prev);
+      }
+    } catch {
+      // Silent fail
+    }
+  }, [session]);
+
   return {
     session,
     sessions,
+    chatMessages,
     loading,
     error,
     interruptLoading,
@@ -235,5 +328,8 @@ export function useInteractiveSession() {
     deleteSession,
     getSegmentAudioUrl,
     submitInterrupt,
+    sendChatMessage,
+    updateProgress,
+    toggleFavorite,
   };
 }

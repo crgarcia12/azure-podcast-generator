@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { apiFetch, toApiUrl } from '../lib/api';
 
 interface PodcastTranscriptTurn {
@@ -157,6 +158,20 @@ export default function PodcastsPage() {
           Enter any topic and PodCraft will write an interview script and synthesize it with two AI voices.
         </p>
       </section>
+
+      {/* Interactive sessions link */}
+      <Link href="/podcasts/sessions">
+        <div className="group rounded-2xl border border-violet-200 bg-gradient-to-br from-violet-50 to-indigo-50 p-5 shadow-sm transition hover:border-violet-300 hover:shadow-md sm:p-6">
+          <div className="flex items-center gap-2 text-sm font-medium text-violet-700 group-hover:text-violet-800">
+            <span>🎙️</span>
+            <span>Interactive Sessions</span>
+            <span className="ml-auto text-base">→</span>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-violet-600 group-hover:text-violet-700">
+            Steer the conversation in real time with our interactive podcast session editor.
+          </p>
+        </div>
+      </Link>
 
       {/* Generator form */}
       <section className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm sm:p-6">

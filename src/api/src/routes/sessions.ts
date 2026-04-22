@@ -11,10 +11,13 @@ import {
   SegmentNotFoundError,
   SESSION_LIMITS,
   getActiveSegments,
+  updateSessionProgress,
+  toggleSessionFavorite,
   type PodcastSession,
   type PodcastSegment,
 } from '../models/session-store.js';
 import { PODCAST_TOPIC_MAX_LENGTH } from '../services/podcast-service.js';
+import { getChatMessages, addChatMessage } from '../models/chat-store.js';
 
 // ─── Response Types ──────────────────────────────────────────────────
 
@@ -44,6 +47,7 @@ interface SessionResponse {
   summary: string;
   revision: number;
   status: string;
+  lastSegmentIndex: number;
   segments: SegmentResponse[];
   interrupts: InterruptResponse[];
   createdAt: string;
@@ -116,7 +120,8 @@ export function mapSessionEndpoints(
         return;
       }
 
-      res.json({ session: toSessionResponse(session) });
+      const chatMessages = getChatMessages(session.id);
+      res.json({ session: toSessionResponse(session), chatMessages });
     } catch (error) {
       logger.error({ err: error, userId: req.user?.sub }, 'Failed to get session');
       res.status(500).json({ error: 'Unable to load session right now' });
@@ -140,6 +145,48 @@ export function mapSessionEndpoints(
     } catch (error) {
       logger.error({ err: error, userId: req.user?.sub }, 'Failed to delete session');
       res.status(500).json({ error: 'Unable to delete session right now' });
+    }
+  });
+
+  // Update session progress (last played segment)
+  app.patch('/api/podcasts/sessions/:sessionId', authMiddleware, async (req, res) => {
+    try {
+      const { lastSegmentIndex } = req.body ?? {};
+      if (typeof lastSegmentIndex !== 'number' || lastSegmentIndex < 0) {
+        res.status(400).json({ error: 'lastSegmentIndex must be a non-negative number' });
+        return;
+      }
+
+      const updated = updateSessionProgress(
+        paramStr(req.params.sessionId),
+        req.user!.sub,
+        lastSegmentIndex,
+      );
+
+      if (!updated) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+
+      res.json({ ok: true });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to update session progress');
+      res.status(500).json({ error: 'Unable to update progress' });
+    }
+  });
+
+  // Toggle session favorite
+  app.post('/api/podcasts/sessions/:sessionId/favorite', authMiddleware, async (req, res) => {
+    try {
+      const result = toggleSessionFavorite(paramStr(req.params.sessionId), req.user!.sub);
+      if (result === undefined) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      res.json({ favorite: result });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to toggle favorite');
+      res.status(500).json({ error: 'Unable to toggle favorite' });
     }
   });
 
@@ -252,6 +299,153 @@ export function mapSessionEndpoints(
     },
   );
 
+  // Get chat messages for a session
+  app.get('/api/podcasts/sessions/:sessionId/chat', authMiddleware, async (req, res) => {
+    try {
+      const session = sessionService.getSession({
+        sessionId: paramStr(req.params.sessionId),
+        userId: req.user!.sub,
+      });
+      if (!session) {
+        res.status(404).json({ error: 'Session not found' });
+        return;
+      }
+      const messages = getChatMessages(session.id);
+      res.json({ messages });
+    } catch (error) {
+      logger.error({ err: error, userId: req.user?.sub }, 'Failed to get chat messages');
+      res.status(500).json({ error: 'Unable to load chat messages' });
+    }
+  });
+
+  // Send a chat message (triggers interrupt)
+  app.post('/api/podcasts/sessions/:sessionId/chat', authMiddleware, async (req, res) => {
+    const { message, inputMethod, afterSegmentId, clientRequestId } = req.body ?? {};
+
+    if (typeof message !== 'string' || message.trim().length === 0) {
+      res.status(400).json({ error: 'message is required' });
+      return;
+    }
+    const trimmedMessage = message.trim();
+    if (trimmedMessage.length < SESSION_LIMITS.questionMinLength) {
+      res.status(400).json({ error: `Message must be at least ${SESSION_LIMITS.questionMinLength} characters` });
+      return;
+    }
+    if (trimmedMessage.length > SESSION_LIMITS.questionMaxLength) {
+      res.status(400).json({ error: `Message must be ${SESSION_LIMITS.questionMaxLength} characters or fewer` });
+      return;
+    }
+    if (typeof afterSegmentId !== 'string' || !afterSegmentId) {
+      res.status(400).json({ error: 'afterSegmentId is required' });
+      return;
+    }
+    if (typeof clientRequestId !== 'string' || !clientRequestId) {
+      res.status(400).json({ error: 'clientRequestId is required' });
+      return;
+    }
+    const resolvedInputMethod = inputMethod === 'voice' ? 'voice' : 'text';
+
+    try {
+      const userMsg = addChatMessage({
+        sessionId: paramStr(req.params.sessionId),
+        role: 'user',
+        content: trimmedMessage,
+      });
+
+      const result = await sessionService.processInterrupt({
+        sessionId: paramStr(req.params.sessionId),
+        userId: req.user!.sub,
+        questionText: trimmedMessage,
+        inputMethod: resolvedInputMethod,
+        afterSegmentId,
+        clientRequestId,
+      });
+
+      const newSegCount = result.newSegments.length;
+      const assistantContent = newSegCount > 0
+        ? `Got it! I've updated the episode based on your feedback. ${newSegCount} new segment${newSegCount !== 1 ? 's' : ''} generated after your edit point.`
+        : 'Your edit has been noted. The episode continues from the current point.';
+
+      const assistantMsg = addChatMessage({
+        sessionId: paramStr(req.params.sessionId),
+        role: 'assistant',
+        content: assistantContent,
+        interruptId: result.session.interrupts[result.session.interrupts.length - 1]?.id,
+      });
+
+      res.json({
+        session: toSessionResponse(result.session),
+        chatMessages: [userMsg, assistantMsg],
+      });
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) {
+        res.status(404).json({ error: error.message });
+        return;
+      }
+      if (error instanceof InterruptConflictError) {
+        res.status(409).json({ error: error.message });
+        return;
+      }
+      if (error instanceof SegmentNotFoundError) {
+        res.status(400).json({ error: error.message });
+        return;
+      }
+      if (error instanceof SessionLimitError) {
+        res.status(429).json({ error: error.message });
+        return;
+      }
+      logger.error({ err: error, sessionId: paramStr(req.params.sessionId) }, 'Chat interrupt failed');
+      res.status(500).json({ error: 'Unable to process your edit right now' });
+    }
+  });
+
+  // Export full episode audio (all active segments concatenated)
+  app.get(
+    '/api/podcasts/sessions/:sessionId/export-audio',
+    authMiddleware,
+    async (req, res) => {
+      try {
+        const session = sessionService.getSession({
+          sessionId: paramStr(req.params.sessionId),
+          userId: req.user!.sub,
+        });
+
+        if (!session) {
+          res.status(404).json({ error: 'Session not found' });
+          return;
+        }
+
+        const activeSegs = getActiveSegments(session);
+        const buffers: Buffer[] = [];
+        for (const seg of activeSegs) {
+          const audio = await sessionService.getSegmentAudio({
+            sessionId: session.id,
+            segmentId: seg.id,
+            userId: req.user!.sub,
+          });
+          if (audio) {
+            buffers.push(audio);
+          }
+        }
+
+        if (buffers.length === 0) {
+          res.status(400).json({ error: 'No audio available for this session' });
+          return;
+        }
+
+        const combined = Buffer.concat(buffers);
+        const safeTopic = session.topic.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+        res.setHeader('Content-Type', 'audio/wav');
+        res.setHeader('Content-Length', combined.length.toString());
+        res.setHeader('Content-Disposition', `attachment; filename="${safeTopic}.wav"`);
+        res.send(combined);
+      } catch (error) {
+        logger.error({ err: error, userId: req.user?.sub }, 'Failed to export session audio');
+        res.status(500).json({ error: 'Unable to export audio right now' });
+      }
+    },
+  );
+
   // Test-only: clear sessions for e2e isolation
   if (process.env.NODE_ENV !== 'production') {
     app.post('/api/test/reset-sessions', (_req, res) => {
@@ -282,6 +476,7 @@ function toSessionResponse(session: PodcastSession): SessionResponse {
     summary: session.summary,
     revision: session.revision,
     status: session.status,
+    lastSegmentIndex: session.lastSegmentIndex,
     segments: activeSegments.map((seg) => toSegmentResponse(session.id, seg)),
     interrupts: session.interrupts.map(toInterruptResponse),
     createdAt: session.createdAt,

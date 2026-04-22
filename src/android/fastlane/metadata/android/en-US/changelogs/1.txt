@@ -1,0 +1,8 @@
+🎉 Initial Release
+
+• Generate podcast episodes from any topic
+• Interactive sessions with real-time conversation steering
+• Android Auto support for hands-free listening
+• 10 screens: Home, Login, Register, Studio, Sessions, Session Detail, Player, Profile, Admin, Settings
+• Material 3 design with dark mode
+• Secure JWT authentication with encrypted cookie storage

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PodCraft</string>
+
+    <!-- Common -->
+    <string name="loading">Loading…</string>
+    <string name="retry">Retry</string>
+    <string name="cancel">Cancel</string>
+    <string name="error_network">Network error — check your connection</string>
+    <string name="error_unexpected">An unexpected error occurred</string>
+
+    <!-- Auth -->
+    <string name="login_title">🎙 PodCraft</string>
+    <string name="login_subtitle">Sign in to listen to your podcasts</string>
+    <string name="username_label">Username</string>
+    <string name="password_label">Password</string>
+    <string name="login_button">Sign in</string>
+    <string name="error_login">Invalid username or password</string>
+    <string name="register_link">Don\'t have an account? Register</string>
+    <string name="register_title">🎙 Create Account</string>
+    <string name="register_subtitle">Join PodCraft and start generating podcasts</string>
+    <string name="register_button">Create account</string>
+    <string name="login_link">Already have an account? Sign in</string>
+    <string name="registration_closed_title">Registration Closed</string>
+    <string name="registration_closed_body">New account registration is currently disabled. Please contact an administrator.</string>
+    <string name="sign_in_instead">Sign in instead</string>
+
+    <!-- Home -->
+    <string name="home_tagline_1">Turn any topic into a</string>
+    <string name="home_tagline_2">podcast episode</string>
+    <string name="home_description">Enter a subject, and PodCraft generates an engaging interview-style script with two AI voices — ready to listen in seconds.</string>
+    <string name="home_cta_authenticated">🎧 Open Studio</string>
+    <string name="home_cta_unauthenticated">Sign in to start</string>
+    <string name="feature_scripts_title">AI-Written Scripts</string>
+    <string name="feature_scripts_desc">Natural host-and-guest dialogue with narrative arc and conversational flow.</string>
+    <string name="feature_speech_title">Natural Speech</string>
+    <string name="feature_speech_desc">Azure Speech synthesizes the script with two distinct voices.</string>
+    <string name="feature_listen_title">Listen Anywhere</string>
+    <string name="feature_listen_desc">Generate and listen on the go. Download episodes to keep them forever.</string>
+
+    <!-- Podcast Studio -->
+    <string name="studio_title">🎙 Podcast Studio</string>
+    <string name="studio_create_title">Create a new episode</string>
+    <string name="studio_create_subtitle">Enter any topic and PodCraft will write an interview script and synthesize it with two AI voices.</string>
+    <string name="studio_topic_prompt">What should the episode be about?</string>
+    <string name="studio_topic_placeholder">Try: \"The rise and fall of Blockbuster Video\"</string>
+    <string name="studio_generate_button">✨ Generate episode</string>
+    <string name="studio_your_episodes">Your episodes</string>
+    <string name="studio_interactive_title">🎙️ Interactive Sessions</string>
+    <string name="studio_interactive_subtitle">Steer the conversation in real time with our interactive podcast session editor.</string>
+    <string name="studio_audio_unavailable">Script ready — audio synthesis was unavailable</string>
+    <string name="studio_error_generic">Unable to create a podcast right now.</string>
+
+    <!-- Sessions -->
+    <string name="sessions_title">Interactive Sessions</string>
+    <string name="sessions_create_prompt">Start a new interactive podcast</string>
+    <string name="sessions_topic_placeholder">Enter a topic…</string>
+    <string name="sessions_create_button">Create</string>
+    <string name="sessions_empty_title">No sessions yet</string>
+    <string name="sessions_empty_subtitle">Create your first interactive podcast above!</string>
+    <string name="sessions_favorites">⭐ Favorites</string>
+    <string name="sessions_all">All Sessions</string>
+    <string name="sessions_past">Past Sessions</string>
+    <string name="sessions_delete_title">Delete Session</string>
+    <string name="sessions_delete_body">Are you sure you want to delete this session? This cannot be undone.</string>
+    <string name="sessions_delete_confirm">Delete</string>
+    <string name="sessions_segments">%d segments</string>
+    <string name="sessions_interrupts">%d interrupts</string>
+    <string name="sessions_status_ready">Ready</string>
+    <string name="sessions_status_generating">Generating</string>
+    <string name="sessions_status_error">Error</string>
+
+    <!-- Session Detail -->
+    <string name="session_detail_title">Session Details</string>
+    <string name="session_transcript">Transcript</string>
+    <string name="session_no_messages">No messages yet</string>
+    <string name="session_no_messages_hint">Ask a question to interact with the podcast!</string>
+    <string name="session_ask_placeholder">Ask a question…</string>
+    <string name="session_host">🎙 Host</string>
+    <string name="session_guest">🎤 Guest</string>
+    <string name="session_listener_question">Listener Question</string>
+
+    <!-- Player -->
+    <string name="player_loading">Loading…</string>
+    <string name="player_not_found">Session not found</string>
+    <string name="player_segment_of">Segment %1$d of %2$d</string>
+    <string name="player_host">Host</string>
+    <string name="player_guest">Guest</string>
+
+    <!-- Profile -->
+    <string name="profile_title">Profile</string>
+    <string name="profile_load_error">Failed to load profile</string>
+    <string name="profile_member_since">Member since %s</string>
+    <string name="profile_admin_panel">🛡️ Admin Panel</string>
+    <string name="profile_open_studio">🎙 Open Studio</string>
+    <string name="profile_logout">Logout</string>
+
+    <!-- Admin -->
+    <string name="admin_title">User Management</string>
+    <string name="admin_access_denied">Access denied. Admin role required.</string>
+    <string name="admin_no_users">No users found</string>
+    <string name="admin_user_count">%d registered users</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_connection_title">Server Connection</string>
+    <string name="settings_api_url_label">API Base URL</string>
+    <string name="settings_api_url_hint">The server URL is configured at build time. To connect to a different server, rebuild the app with the updated API_BASE_URL.</string>
+    <string name="settings_about_title">About</string>
+    <string name="settings_account_title">Account</string>
+    <string name="settings_sign_out">Sign Out</string>
+    <string name="settings_footer">PodCraft — AI-powered podcast generation</string>
+
+    <!-- Android Auto / Playback -->
+    <string name="sign_in_prompt">Sign in on your phone to browse podcasts</string>
+    <string name="segment_of">Segment %1$d of %2$d</string>
+    <string name="no_sessions">No sessions yet — create one on the web</string>
+
+    <!-- Accessibility -->
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_play">Play</string>
+    <string name="cd_pause">Pause</string>
+    <string name="cd_previous_segment">Previous segment</string>
+    <string name="cd_next_segment">Next segment</string>
+    <string name="cd_favorite">Add to favorites</string>
+    <string name="cd_unfavorite">Remove from favorites</string>
+    <string name="cd_delete_session">Delete session</string>
+    <string name="cd_send_message">Send message</string>
+    <string name="cd_show_transcript">Show transcript</string>
+    <string name="cd_show_chat">Show chat</string>
+    <string name="cd_download_audio">Download audio</string>
+    <string name="cd_play_episode">Play episode audio</string>
+    <string name="cd_expand_transcript">Expand transcript</string>
+    <string name="cd_collapse_transcript">Collapse transcript</string>
+    <string name="cd_play_session">Play session</string>
+</resources>

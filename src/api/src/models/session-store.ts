@@ -1,4 +1,6 @@
 import crypto from 'node:crypto';
+import { getDatabase } from './database.js';
+import { deleteSessionAudio, clearAllAudio } from './audio-store.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -37,6 +39,8 @@ export interface PodcastSession {
   interrupts: UserInterrupt[];
   pendingInterruptId?: string;
   contextSummary?: string;
+  lastSegmentIndex: number;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -48,6 +52,7 @@ export interface PodcastSessionSummary {
   segmentCount: number;
   interruptCount: number;
   status: SessionStatus;
+  favorite: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -60,14 +65,163 @@ export const SESSION_LIMITS = {
   maxInterruptsPerSession: 20,
   questionMinLength: 5,
   questionMaxLength: 500,
-  audioCacheMaxPerSession: 50,
 } as const;
 
-// ─── Storage ─────────────────────────────────────────────────────────
+// ─── DB Row Types ────────────────────────────────────────────────────
 
-const sessions = new Map<string, PodcastSession>();
-const audioCache = new Map<string, Buffer>();
-const audioLruOrder = new Map<string, string[]>(); // sessionId → segmentId[]
+interface SessionRow {
+  id: string;
+  user_id: string;
+  topic: string;
+  title: string;
+  summary: string;
+  revision: number;
+  status: string;
+  context_summary: string | null;
+  pending_interrupt_id: string | null;
+  last_segment_index: number;
+  favorite: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface SegmentRow {
+  id: string;
+  session_id: string;
+  idx: number;
+  host_line: string;
+  guest_line: string;
+  status: string;
+  revision: number;
+  generated_after_interrupt: string | null;
+  created_at: string;
+}
+
+interface InterruptRow {
+  id: string;
+  session_id: string;
+  client_request_id: string;
+  after_segment_id: string;
+  question_text: string;
+  input_method: string;
+  created_at: string;
+}
+
+// ─── DB Helpers ──────────────────────────────────────────────────────
+
+function loadSession(sessionId: string): PodcastSession | undefined {
+  const db = getDatabase();
+  const row = db.prepare('SELECT * FROM sessions WHERE id = ?').get(sessionId) as SessionRow | undefined;
+  if (!row) return undefined;
+
+  const segments = db.prepare(
+    'SELECT * FROM segments WHERE session_id = ? ORDER BY idx ASC',
+  ).all(sessionId) as SegmentRow[];
+
+  const interrupts = db.prepare(
+    'SELECT * FROM interrupts WHERE session_id = ? ORDER BY created_at ASC',
+  ).all(sessionId) as InterruptRow[];
+
+  return {
+    id: row.id,
+    userId: row.user_id,
+    topic: row.topic,
+    title: row.title,
+    summary: row.summary,
+    revision: row.revision,
+    status: row.status as SessionStatus,
+    contextSummary: row.context_summary ?? undefined,
+    pendingInterruptId: row.pending_interrupt_id ?? undefined,
+    lastSegmentIndex: row.last_segment_index,
+    favorite: row.favorite === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    segments: segments.map((s) => ({
+      id: s.id,
+      index: s.idx,
+      hostLine: s.host_line,
+      guestLine: s.guest_line,
+      status: s.status as SegmentStatus,
+      revision: s.revision,
+      generatedAfterInterrupt: s.generated_after_interrupt ?? undefined,
+      createdAt: s.created_at,
+    })),
+    interrupts: interrupts.map((i) => ({
+      id: i.id,
+      clientRequestId: i.client_request_id,
+      afterSegmentId: i.after_segment_id,
+      questionText: i.question_text,
+      inputMethod: i.input_method as 'voice' | 'text',
+      createdAt: i.created_at,
+    })),
+  };
+}
+
+function persistSession(session: PodcastSession): void {
+  const db = getDatabase();
+  // Use ON CONFLICT UPDATE to avoid DELETE+INSERT which triggers ON DELETE CASCADE
+  db.prepare(`
+    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, last_segment_index, favorite, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      user_id = excluded.user_id, topic = excluded.topic, title = excluded.title,
+      summary = excluded.summary, revision = excluded.revision, status = excluded.status,
+      context_summary = excluded.context_summary, pending_interrupt_id = excluded.pending_interrupt_id,
+      last_segment_index = excluded.last_segment_index, favorite = excluded.favorite,
+      created_at = excluded.created_at, updated_at = excluded.updated_at
+  `).run(
+    session.id,
+    session.userId,
+    session.topic,
+    session.title,
+    session.summary,
+    session.revision,
+    session.status,
+    session.contextSummary ?? null,
+    session.pendingInterruptId ?? null,
+    session.lastSegmentIndex,
+    session.favorite ? 1 : 0,
+    session.createdAt,
+    session.updatedAt,
+  );
+}
+
+function persistSegments(sessionId: string, segments: PodcastSegment[]): void {
+  const db = getDatabase();
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO segments (id, session_id, idx, host_line, guest_line, status, revision, generated_after_interrupt, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const seg of segments) {
+    stmt.run(
+      seg.id,
+      sessionId,
+      seg.index,
+      seg.hostLine,
+      seg.guestLine,
+      seg.status,
+      seg.revision,
+      seg.generatedAfterInterrupt ?? null,
+      seg.createdAt,
+    );
+  }
+}
+
+function persistInterrupt(sessionId: string, interrupt: UserInterrupt): void {
+  const db = getDatabase();
+  db.prepare(`
+    INSERT OR IGNORE INTO interrupts (id, session_id, client_request_id, after_segment_id, question_text, input_method, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    interrupt.id,
+    sessionId,
+    interrupt.clientRequestId,
+    interrupt.afterSegmentId,
+    interrupt.questionText,
+    interrupt.inputMethod,
+    interrupt.createdAt,
+  );
+}
 
 // ─── Session CRUD ────────────────────────────────────────────────────
 
@@ -104,20 +258,27 @@ export function createSession(params: {
       createdAt: now,
     })),
     interrupts: [],
+    lastSegmentIndex: 0,
+    favorite: false,
     createdAt: now,
     updatedAt: now,
   };
 
-  sessions.set(session.id, session);
+  const db = getDatabase();
+  db.transaction(() => {
+    persistSession(session);
+    persistSegments(session.id, session.segments);
+  })();
+
   return session;
 }
 
 export function getSessionById(sessionId: string): PodcastSession | undefined {
-  return sessions.get(sessionId);
+  return loadSession(sessionId);
 }
 
 export function getOwnedSession(sessionId: string, userId: string): PodcastSession | undefined {
-  const session = sessions.get(sessionId);
+  const session = loadSession(sessionId);
   if (!session || session.userId !== userId) {
     return undefined;
   }
@@ -125,42 +286,95 @@ export function getOwnedSession(sessionId: string, userId: string): PodcastSessi
 }
 
 export function getSessionsByUser(userId: string): PodcastSession[] {
-  return Array.from(sessions.values())
-    .filter((s) => s.userId === userId)
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  const db = getDatabase();
+  const rows = db.prepare(
+    'SELECT id FROM sessions WHERE user_id = ? ORDER BY created_at DESC',
+  ).all(userId) as Array<{ id: string }>;
+
+  const result: PodcastSession[] = [];
+  for (const row of rows) {
+    const session = loadSession(row.id);
+    if (session) result.push(session);
+  }
+  return result;
 }
 
 export function getSessionSummariesByUser(userId: string): PodcastSessionSummary[] {
-  return getSessionsByUser(userId).map((s) => ({
-    id: s.id,
-    topic: s.topic,
-    title: s.title,
-    segmentCount: s.segments.filter((seg) => seg.status !== 'stale').length,
-    interruptCount: s.interrupts.length,
-    status: s.status,
-    createdAt: s.createdAt,
-    updatedAt: s.updatedAt,
+  const db = getDatabase();
+  const rows = db.prepare(`
+    SELECT s.id, s.topic, s.title, s.status, s.favorite, s.created_at, s.updated_at,
+      (SELECT COUNT(*) FROM segments seg WHERE seg.session_id = s.id AND seg.status != 'stale') AS segment_count,
+      (SELECT COUNT(*) FROM interrupts i WHERE i.session_id = s.id) AS interrupt_count
+    FROM sessions s
+    WHERE s.user_id = ?
+    ORDER BY s.favorite DESC, s.created_at DESC
+  `).all(userId) as Array<{
+    id: string;
+    topic: string;
+    title: string;
+    status: string;
+    favorite: number;
+    created_at: string;
+    updated_at: string;
+    segment_count: number;
+    interrupt_count: number;
+  }>;
+
+  return rows.map((r) => ({
+    id: r.id,
+    topic: r.topic,
+    title: r.title,
+    segmentCount: r.segment_count,
+    interruptCount: r.interrupt_count,
+    status: r.status as SessionStatus,
+    favorite: r.favorite === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
   }));
 }
 
 export function deleteSession(sessionId: string, userId: string): boolean {
-  const session = sessions.get(sessionId);
-  if (!session || session.userId !== userId) {
+  const db = getDatabase();
+  const row = db.prepare('SELECT user_id FROM sessions WHERE id = ?').get(sessionId) as { user_id: string } | undefined;
+  if (!row || row.user_id !== userId) {
     return false;
   }
 
-  // Evict all audio for this session
-  for (const segment of session.segments) {
-    audioCache.delete(segment.id);
-  }
-  audioLruOrder.delete(sessionId);
-  sessions.delete(sessionId);
+  // Remove persisted audio for this session
+  deleteSessionAudio(sessionId);
+
+  // CASCADE handles segments/interrupts
+  db.prepare('DELETE FROM sessions WHERE id = ?').run(sessionId);
   return true;
 }
 
 export function updateSession(session: PodcastSession): void {
   session.updatedAt = new Date().toISOString();
-  sessions.set(session.id, session);
+  const db = getDatabase();
+  db.transaction(() => {
+    persistSession(session);
+    // Replace all segments: delete existing, re-insert all
+    db.prepare('DELETE FROM segments WHERE session_id = ?').run(session.id);
+    persistSegments(session.id, session.segments);
+  })();
+}
+
+export function updateSessionProgress(sessionId: string, userId: string, lastSegmentIndex: number): boolean {
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return false;
+  session.lastSegmentIndex = lastSegmentIndex;
+  session.updatedAt = new Date().toISOString();
+  persistSession(session);
+  return true;
+}
+
+export function toggleSessionFavorite(sessionId: string, userId: string): boolean | undefined {
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return undefined;
+  session.favorite = !session.favorite;
+  session.updatedAt = new Date().toISOString();
+  persistSession(session);
+  return session.favorite;
 }
 
 // ─── Interrupt State Machine ─────────────────────────────────────────
@@ -214,10 +428,15 @@ export function beginInterrupt(
     createdAt: new Date().toISOString(),
   };
 
-  session.pendingInterruptId = interrupt.id;
-  session.status = 'interrupted';
-  session.interrupts.push(interrupt);
-  updateSession(session);
+  const db = getDatabase();
+  db.transaction(() => {
+    persistInterrupt(session.id, interrupt);
+    session.pendingInterruptId = interrupt.id;
+    session.status = 'interrupted';
+    session.interrupts.push(interrupt);
+    session.updatedAt = new Date().toISOString();
+    persistSession(session);
+  })();
 
   return interrupt;
 }
@@ -241,12 +460,11 @@ export function completeInterrupt(
   session.revision += 1;
   const now = new Date().toISOString();
 
-  // Mark segments after the interrupt point as stale and evict their audio
+  // Mark segments after the interrupt point as stale
   const afterIndex = afterSegment.index;
   for (const seg of session.segments) {
     if (seg.index > afterIndex && seg.status !== 'stale') {
       seg.status = 'stale';
-      audioCache.delete(seg.id);
     }
   }
 
@@ -285,35 +503,6 @@ export function failInterrupt(session: PodcastSession): void {
   updateSession(session);
 }
 
-// ─── Audio Cache ─────────────────────────────────────────────────────
-
-export function getSegmentAudio(segmentId: string): Buffer | undefined {
-  return audioCache.get(segmentId);
-}
-
-export function setSegmentAudio(sessionId: string, segmentId: string, audio: Buffer): void {
-  const order = audioLruOrder.get(sessionId) ?? [];
-
-  // Remove existing entry to refresh position
-  const existingIndex = order.indexOf(segmentId);
-  if (existingIndex !== -1) {
-    order.splice(existingIndex, 1);
-  }
-
-  order.push(segmentId);
-
-  // Evict oldest if over limit
-  while (order.length > SESSION_LIMITS.audioCacheMaxPerSession) {
-    const evicted = order.shift();
-    if (evicted) {
-      audioCache.delete(evicted);
-    }
-  }
-
-  audioLruOrder.set(sessionId, order);
-  audioCache.set(segmentId, audio);
-}
-
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 export function getActiveSegments(session: PodcastSession): PodcastSegment[] {
@@ -323,9 +512,12 @@ export function getActiveSegments(session: PodcastSession): PodcastSegment[] {
 }
 
 export function clearSessions(): void {
-  sessions.clear();
-  audioCache.clear();
-  audioLruOrder.clear();
+  const db = getDatabase();
+  db.prepare('DELETE FROM chat_messages').run();
+  db.prepare('DELETE FROM interrupts').run();
+  db.prepare('DELETE FROM segments').run();
+  db.prepare('DELETE FROM sessions').run();
+  clearAllAudio();
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────

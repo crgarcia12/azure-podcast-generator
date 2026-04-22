@@ -1,0 +1,32 @@
+PodCraft transforms any topic into an engaging interview-style podcast episode — complete with AI-written scripts and natural-sounding speech synthesis.
+
+🎙️ How It Works
+1. Enter any topic — from quantum physics to cooking tips
+2. AI generates a natural host-and-guest conversation with narrative arc
+3. Azure Speech synthesizes the script with two distinct voices
+4. Listen instantly or download for later
+
+✨ Key Features
+
+• AI-Written Scripts — Natural dialogue between a curious host and knowledgeable guest, with conversational flow and narrative structure
+
+• Natural Speech — Azure Neural TTS produces studio-quality audio with two distinct voices that sound remarkably human
+
+• Interactive Sessions — Steer the conversation in real time. Pause, ask questions, challenge points, and explore tangents
+
+• Android Auto — Listen to your podcasts on the road with full Android Auto integration
+
+• Dark Mode — Beautiful Material 3 design with automatic dark/light theme support
+
+• Offline Ready — Episodes are cached for listening without an internet connection
+
+🎧 Perfect For
+• Learning about new topics during your commute
+• Generating educational content
+• Exploring ideas in a conversational format
+• Content creators looking for podcast inspiration
+
+🔒 Privacy First
+PodCraft uses secure JWT authentication with encrypted storage. Your data stays between you and your server. Self-host the backend for complete control.
+
+Built with Jetpack Compose, Media3, and Material 3. Powered by Azure OpenAI and Azure Speech Services.
