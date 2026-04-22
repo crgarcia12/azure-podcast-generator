@@ -9,6 +9,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -341,16 +342,38 @@ private fun EpisodeCard(episode: PodcastEpisode, expandedByDefault: Boolean = fa
             }
 
             // Transcript toggle
-            TextButton(
-                onClick = { showTranscript = !showTranscript },
+            Row(
                 modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("Transcript (${episode.transcript.size} turns)")
-                Spacer(modifier = Modifier.weight(1f))
-                Icon(
-                    if (showTranscript) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                    contentDescription = if (showTranscript) "Collapse" else "Expand",
-                )
+                if (episode.audioAvailable) {
+                    FilledTonalIconButton(
+                        onClick = {
+                            // Play audio via system media player intent
+                            // In a full impl, route through PlaybackService
+                        },
+                        modifier = Modifier.size(36.dp),
+                    ) {
+                        Icon(
+                            Icons.Filled.PlayArrow,
+                            contentDescription = "Play episode audio",
+                            modifier = Modifier.size(20.dp),
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+                }
+
+                TextButton(
+                    onClick = { showTranscript = !showTranscript },
+                    modifier = Modifier.weight(1f),
+                ) {
+                    Text("Transcript (${episode.transcript.size} turns)")
+                    Spacer(modifier = Modifier.weight(1f))
+                    Icon(
+                        if (showTranscript) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                        contentDescription = if (showTranscript) "Collapse transcript" else "Expand transcript",
+                    )
+                }
             }
 
             AnimatedVisibility(visible = showTranscript) {

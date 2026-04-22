@@ -29,6 +29,7 @@ fun PlayerScreen(sessionId: String, onBack: () -> Unit) {
     val context = LocalContext.current
     var session by remember { mutableStateOf<Session?>(null) }
     var loading by remember { mutableStateOf(true) }
+    var controllerReady by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var controller by remember { mutableStateOf<MediaController?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
@@ -58,6 +59,7 @@ fun PlayerScreen(sessionId: String, onBack: () -> Unit) {
             try {
                 val ctrl = future.get()
                 controller = ctrl
+                controllerReady = true
                 ctrl.addListener(object : androidx.media3.common.Player.Listener {
                     override fun onIsPlayingChanged(playing: Boolean) {
                         isPlaying = playing
@@ -93,14 +95,28 @@ fun PlayerScreen(sessionId: String, onBack: () -> Unit) {
     ) { padding ->
         if (loading) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Loading session…", style = MaterialTheme.typography.bodySmall)
+                }
             }
             return@Scaffold
         }
 
         if (error != null || session == null) {
             Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                Text(error ?: "Session not found", color = MaterialTheme.colorScheme.error)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(error ?: "Session not found", color = MaterialTheme.colorScheme.error)
+                    if (!controllerReady) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            "Connecting to player…",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
             }
             return@Scaffold
         }
@@ -188,17 +204,19 @@ fun PlayerScreen(sessionId: String, onBack: () -> Unit) {
                     onClick = {
                         val ctrl = controller ?: return@FilledIconButton
                         if (!ctrl.isPlaying && ctrl.mediaItemCount == 0 && sess.segments.isNotEmpty()) {
-                            // First play — trigger via PlaybackService
-                            scope.launch {
-                                // Start playback through service
-                                val svcIntent = android.content.Intent(context, PlaybackService::class.java)
-                                context.startForegroundService(svcIntent)
-                                // The service will load via loadAndPlaySession
-                            }
+                            // First play — load session via MediaController (works for both phone and Auto)
+                            val sessionItem = MediaItem.Builder()
+                                .setMediaId("play_all:$sessionId")
+                                .build()
+                            ctrl.setMediaItem(sessionItem)
+                            ctrl.prepare()
+                            ctrl.play()
+                        } else {
+                            if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
                         }
-                        if (ctrl.isPlaying) ctrl.pause() else ctrl.play()
                     },
                     modifier = Modifier.size(64.dp),
+                    enabled = controllerReady,
                 ) {
                     Icon(
                         if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,

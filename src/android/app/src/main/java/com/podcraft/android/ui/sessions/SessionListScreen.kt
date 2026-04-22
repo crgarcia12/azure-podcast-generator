@@ -341,6 +341,11 @@ private fun SessionCard(
                     )
                 }
             }
+            // Status badge
+            StatusBadge(
+                status = session.status,
+                modifier = Modifier.padding(end = 4.dp),
+            )
             IconButton(onClick = onToggleFavorite) {
                 Icon(
                     if (session.favorite) Icons.Filled.Star else Icons.Filled.StarBorder,
@@ -351,7 +356,7 @@ private fun SessionCard(
             IconButton(onClick = onDelete) {
                 Icon(
                     Icons.Filled.Delete,
-                    contentDescription = "Delete",
+                    contentDescription = "Delete session",
                     tint = MaterialTheme.colorScheme.error.copy(alpha = 0.7f)
                 )
             }
@@ -364,5 +369,39 @@ private fun formatDate(iso: String): String {
         iso.substringBefore("T")
     } catch (_: Exception) {
         iso
+    }
+}
+
+@Composable
+private fun StatusBadge(status: String, modifier: Modifier = Modifier) {
+    val (label, containerColor, contentColor) = when (status) {
+        "generating" -> Triple(
+            "Generating",
+            MaterialTheme.colorScheme.tertiaryContainer,
+            MaterialTheme.colorScheme.onTertiaryContainer,
+        )
+        "error" -> Triple(
+            "Error",
+            MaterialTheme.colorScheme.errorContainer,
+            MaterialTheme.colorScheme.onErrorContainer,
+        )
+        else -> Triple(
+            "Ready",
+            MaterialTheme.colorScheme.primaryContainer,
+            MaterialTheme.colorScheme.onPrimaryContainer,
+        )
+    }
+
+    Surface(
+        modifier = modifier,
+        shape = MaterialTheme.shapes.small,
+        color = containerColor,
+    ) {
+        Text(
+            text = label,
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = contentColor,
+        )
     }
 }

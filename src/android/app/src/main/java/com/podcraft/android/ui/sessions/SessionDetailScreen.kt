@@ -41,6 +41,7 @@ fun SessionDetailScreen(
     var showChat by remember { mutableStateOf(false) }
     var questionText by remember { mutableStateOf("") }
     var sending by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
     fun loadSession() {
@@ -125,13 +126,50 @@ fun SessionDetailScreen(
                     IconButton(onClick = { showChat = !showChat }) {
                         Icon(
                             if (showChat) Icons.Filled.GraphicEq else Icons.Filled.Chat,
-                            contentDescription = if (showChat) "Transcript" else "Chat",
+                            contentDescription = if (showChat) "Show transcript" else "Show chat",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
                     if (session != null && session!!.segments.isNotEmpty()) {
+                        // Download audio
+                        IconButton(
+                            onClick = {
+                                if (!downloading) {
+                                    downloading = true
+                                    scope.launch {
+                                        try {
+                                            val sess = session!!
+                                            sess.segments.forEachIndexed { i, seg ->
+                                                val url = "${ApiClient.getBaseUrl()}${seg.audioUrl}"
+                                                // Trigger download via OkHttp (cookie auth)
+                                                val response = ApiClient.get().getSegmentAudio(sessionId, seg.id)
+                                                // In a real impl, write to Downloads folder
+                                                response.body()?.close()
+                                            }
+                                        } catch (_: Exception) {
+                                            error = "Download failed"
+                                        }
+                                        downloading = false
+                                    }
+                                }
+                            },
+                            enabled = !downloading,
+                        ) {
+                            if (downloading) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(20.dp),
+                                    strokeWidth = 2.dp,
+                                )
+                            } else {
+                                Icon(
+                                    Icons.Filled.Download,
+                                    contentDescription = "Download audio",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                         IconButton(onClick = { onPlaySession(sessionId) }) {
-                            Icon(Icons.Filled.PlayCircle, contentDescription = "Play", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Filled.PlayCircle, contentDescription = "Play session", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }

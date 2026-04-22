@@ -37,11 +37,17 @@ jobs:
         with:
           gradle-version: '8.11.1'
 
+      - name: Generate Gradle wrapper if missing
+        run: |
+          if [ ! -f gradlew ]; then
+            gradle wrapper --gradle-version 8.11.1
+          fi
+
       - name: Build debug APK
-        run: gradle assembleDevDebug
+        run: ./gradlew assembleDevDebug
 
       - name: Run unit tests
-        run: gradle testDevDebugUnitTest
+        run: ./gradlew testDevDebugUnitTest
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
