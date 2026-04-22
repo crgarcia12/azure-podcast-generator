@@ -15,6 +15,8 @@ import {
   getSegmentAudio,
   setSegmentAudio,
 } from '../models/audio-store.js';
+import { synthesizeLine } from './edge-tts.js';
+import { logger } from '../logger.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -130,10 +132,17 @@ function createMockInteractiveService(): InteractiveSessionService {
     },
 
     async getSegmentAudio({ sessionId, segmentId, userId }) {
-      return getOrGenerateAudio(sessionId, segmentId, userId, (segment) => {
-        const textLength = segment.hostLine.length + segment.guestLine.length;
-        const durationMs = Math.min(8000, Math.max(1500, textLength * 15));
-        return createToneWaveBuffer(durationMs);
+      return getOrGenerateAudio(sessionId, segmentId, userId, async (segment) => {
+        try {
+          const hostAudio = await synthesizeLine('host', segment.hostLine);
+          const guestAudio = await synthesizeLine('guest', segment.guestLine);
+          return Buffer.concat([hostAudio, guestAudio]);
+        } catch (err) {
+          logger.warn({ err, segmentId }, 'Edge TTS failed for segment — falling back to tone');
+          const textLength = segment.hostLine.length + segment.guestLine.length;
+          const durationMs = Math.min(8000, Math.max(1500, textLength * 15));
+          return createToneWaveBuffer(durationMs);
+        }
       });
     },
 
@@ -216,7 +225,7 @@ async function getOrGenerateAudio(
   sessionId: string,
   segmentId: string,
   userId: string,
-  generateFn: (segment: PodcastSegment) => Buffer,
+  generateFn: (segment: PodcastSegment) => Buffer | Promise<Buffer>,
 ): Promise<Buffer | null> {
   const session = getOwnedSession(sessionId, userId);
   if (!session) {
@@ -235,7 +244,7 @@ async function getOrGenerateAudio(
   }
 
   // Generate audio
-  const audio = generateFn(segment);
+  const audio = await generateFn(segment);
   setSegmentAudio(sessionId, segmentId, audio);
   return audio;
 }

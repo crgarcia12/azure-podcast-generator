@@ -65,6 +65,12 @@ export function deleteUser(id: string): void {
   db.prepare('DELETE FROM users WHERE id = ?').run(id);
 }
 
+export function updateUserPassword(id: string, passwordHash: string): boolean {
+  const db = getDatabase();
+  const result = db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(passwordHash, id);
+  return result.changes > 0;
+}
+
 export function getAllUsers(): User[] {
   const db = getDatabase();
   const rows = db.prepare('SELECT * FROM users').all() as UserRow[];

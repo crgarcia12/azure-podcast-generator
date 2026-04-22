@@ -96,7 +96,7 @@ export default function SessionsPage() {
         <div className="flex items-center justify-between mb-2">
           <Link
             href="/podcasts"
-            className="text-sm text-gray-500 hover:text-gray-700 transition"
+            className="text-sm text-gray-500 hover:text-gray-700 transition dark:text-gray-400 dark:hover:text-gray-300"
           >
             ← Back to Studio
           </Link>
@@ -107,17 +107,17 @@ export default function SessionsPage() {
             + New Episode
           </Link>
         </div>
-        <h1 className="text-2xl font-bold text-gray-900 sm:text-3xl">
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 sm:text-3xl">
           🎙️ Interactive Sessions
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-2 text-gray-600 dark:text-gray-400">
           Create a podcast and steer the conversation in real time. Ask questions, challenge points, and explore topics that spark your curiosity.
         </p>
       </div>
 
       {/* Create new session */}
-      <form onSubmit={handleCreate} className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
-        <label htmlFor="session-topic" className="mb-2 block text-sm font-medium text-gray-700">
+      <form onSubmit={handleCreate} className="mb-8 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <label htmlFor="session-topic" className="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
           Start a new interactive podcast
         </label>
         <div className="flex gap-2">
@@ -129,7 +129,7 @@ export default function SessionsPage() {
             placeholder="Enter a topic (e.g., quantum computing)"
             maxLength={120}
             disabled={creating}
-            className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400 disabled:opacity-50"
+            className="flex-1 rounded-xl border border-gray-200 px-4 py-2.5 text-sm placeholder-gray-400 focus:border-violet-400 focus:outline-none focus:ring-1 focus:ring-violet-400 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
           />
           <button
             type="submit"
@@ -143,7 +143,7 @@ export default function SessionsPage() {
 
       {/* Error */}
       {error && (
-        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
         </div>
       )}
@@ -154,22 +154,22 @@ export default function SessionsPage() {
           <div className="h-8 w-8 animate-spin rounded-full border-4 border-violet-200 border-t-violet-600" />
         </div>
       ) : sessions.length === 0 ? (
-        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 text-center">
-          <p className="text-lg font-medium text-gray-500">No sessions yet</p>
-          <p className="mt-1 text-sm text-gray-400">
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 text-center dark:border-gray-700">
+          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">No sessions yet</p>
+          <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
             Create your first interactive podcast above!
           </p>
         </div>
       ) : (
         <div className="space-y-3">
-          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider">
+          <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider dark:text-gray-400">
             Past Sessions
           </h2>
           {sessions.map((s) => (
             <div
               key={s.id}
               onClick={() => router.push(`/podcasts/sessions/${s.id}`)}
-              className="group relative flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4 cursor-pointer transition hover:border-violet-200 hover:shadow-md"
+              className="group relative flex items-start justify-between rounded-xl border border-gray-200 bg-white p-4 cursor-pointer transition hover:border-violet-200 hover:shadow-md dark:border-gray-700 dark:bg-gray-900 dark:hover:border-violet-800"
             >
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
@@ -180,14 +180,14 @@ export default function SessionsPage() {
                   >
                     {s.favorite ? '⭐' : '☆'}
                   </button>
-                  <h3 className="truncate text-base font-semibold text-gray-900 group-hover:text-violet-700">
+                  <h3 className="truncate text-base font-semibold text-gray-900 group-hover:text-violet-700 dark:text-gray-100 dark:group-hover:text-violet-400">
                     {s.topic}
                   </h3>
                   {statusBadge(s.status)}
                 </div>
-                <p className="truncate text-sm text-gray-500">{s.title}</p>
-                <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-400">
-                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                <p className="truncate text-sm text-gray-500 dark:text-gray-400">{s.title}</p>
+                <div className="mt-1.5 flex items-center gap-2 text-xs text-gray-400 dark:text-gray-500">
+                  <span className="inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">
                     {s.segmentCount} segment{s.segmentCount !== 1 ? 's' : ''}
                   </span>
                   <span>~{Math.max(1, Math.round(s.segmentCount * 0.5))} min</span>
@@ -199,7 +199,7 @@ export default function SessionsPage() {
               </div>
               <button
                 onClick={(e) => { e.stopPropagation(); handleDelete(s.id); }}
-                className="ml-3 shrink-0 rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500"
+                className="ml-3 shrink-0 rounded-lg p-2 text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:text-gray-500 dark:hover:bg-red-900/30 dark:hover:text-red-400"
                 aria-label="Delete session"
               >
                 <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -2,7 +2,7 @@ import { type Express, type Request } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
-import { getUserByUsername, addUser, getUserById, getUsers } from '../models/user-store.js';
+import { getUserByUsername, addUser, getUserById, getUsers, updateUserPassword } from '../models/user-store.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const getSecret = (): string => {
@@ -188,5 +188,41 @@ export function mapAuthEndpoints(app: Express): void {
       role: user.role,
       createdAt: user.createdAt.toISOString(),
     });
+  });
+
+  app.post('/api/auth/change-password', authMiddleware, async (req, res) => {
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+
+    if (!currentPassword || !newPassword) {
+      res.status(400).json({ error: 'Current password and new password are required' });
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      res.status(400).json({ error: 'New password must be at least 8 characters' });
+      return;
+    }
+
+    if (currentPassword === newPassword) {
+      res.status(400).json({ error: 'New password must be different from current password' });
+      return;
+    }
+
+    const user = getUserById(req.user!.sub);
+    if (!user) {
+      res.status(401).json({ error: 'Not authenticated' });
+      return;
+    }
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!valid) {
+      res.status(401).json({ error: 'Current password is incorrect' });
+      return;
+    }
+
+    const newHash = await bcrypt.hash(newPassword, 10);
+    updateUserPassword(user.id, newHash);
+
+    res.status(200).json({ message: 'Password changed successfully' });
   });
 }

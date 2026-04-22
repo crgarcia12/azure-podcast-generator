@@ -56,7 +56,7 @@ export default function AdminPage() {
   if (loading) {
     return (
       <main className="flex min-h-[80vh] items-center justify-center">
-        <p className="text-gray-600">Loading users...</p>
+        <p className="text-gray-600 dark:text-gray-400">Loading users...</p>
       </main>
     );
   }
@@ -65,28 +65,28 @@ export default function AdminPage() {
     return (
       <main className="flex min-h-[80vh] flex-col items-center justify-center gap-2">
         <h1 className="text-2xl font-bold text-red-600">Access Denied</h1>
-        <p className="text-gray-600">You do not have permission to view this page.</p>
+        <p className="text-gray-600 dark:text-gray-400">You do not have permission to view this page.</p>
       </main>
     );
   }
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
-      <h1 className="mb-6 text-2xl font-bold text-gray-900">Users</h1>
+      <h1 className="mb-6 text-2xl font-bold text-gray-900 dark:text-gray-100">Users</h1>
       <table className="w-full border-collapse text-left">
         <thead>
-          <tr className="border-b border-gray-200">
-            <th className="px-4 py-3 text-sm font-medium text-gray-600">Username</th>
-            <th className="px-4 py-3 text-sm font-medium text-gray-600">Role</th>
-            <th className="px-4 py-3 text-sm font-medium text-gray-600">Member Since</th>
+          <tr className="border-b border-gray-200 dark:border-gray-700">
+            <th className="px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Username</th>
+            <th className="px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Role</th>
+            <th className="px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">Member Since</th>
           </tr>
         </thead>
         <tbody>
           {users.map((u) => (
-            <tr key={u.username} className="border-b border-gray-100">
-              <td className="px-4 py-3 text-gray-900">{u.username}</td>
-              <td className="px-4 py-3 text-gray-700">{u.role}</td>
-              <td className="px-4 py-3 text-gray-700">{formatDate(u.createdAt)}</td>
+            <tr key={u.username} className="border-b border-gray-100 dark:border-gray-800">
+              <td className="px-4 py-3 text-gray-900 dark:text-gray-100">{u.username}</td>
+              <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{u.role}</td>
+              <td className="px-4 py-3 text-gray-700 dark:text-gray-300">{formatDate(u.createdAt)}</td>
             </tr>
           ))}
         </tbody>

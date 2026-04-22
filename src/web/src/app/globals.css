@@ -1,8 +1,15 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #fafafa;
   --foreground: #171717;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -41,4 +48,22 @@ body {
 
 .animate-spin-slow {
   animation: spin-slow 3s linear infinite;
+}
+
+@keyframes toast-in {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+  from { transform: translateX(0); opacity: 1; }
+  to { transform: translateX(100%); opacity: 0; }
+}
+
+.animate-toast-in {
+  animation: toast-in 0.3s ease-out;
+}
+
+.animate-toast-out {
+  animation: toast-out 0.3s ease-in forwards;
 }

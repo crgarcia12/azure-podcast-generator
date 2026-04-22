@@ -107,8 +107,8 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
       ownerId: req.user!.sub,
     });
 
-    if (!episode) {
-      res.status(404).json({ error: 'Podcast not found' });
+    if (!episode || !episode.audioBuffer || !episode.audioContentType) {
+      res.status(404).json({ error: 'Podcast audio not found' });
       return;
     }
 
@@ -131,7 +131,7 @@ function parseTopic(body: CreatePodcastBody): string | null {
 function toEpisodeResponse(
   episode: PodcastEpisodeDraft | StoredPodcastEpisode,
 ): PodcastEpisodeResponse {
-  const hasAudio = 'audioBuffer' in episode;
+  const hasAudio = Boolean((episode as StoredPodcastEpisode).audioBuffer);
 
   return {
     id: episode.id,
@@ -147,6 +147,6 @@ function toEpisodeResponse(
     })),
     audioAvailable: hasAudio,
     audioUrl: hasAudio ? `/api/podcasts/${episode.id}/audio` : null,
-    audioContentType: hasAudio ? episode.audioContentType : null,
+    audioContentType: hasAudio ? (episode as StoredPodcastEpisode).audioContentType ?? null : null,
   };
 }

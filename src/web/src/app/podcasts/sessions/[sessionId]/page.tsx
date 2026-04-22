@@ -134,8 +134,8 @@ export default function SessionPlayerPage() {
   if (!session) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 text-center">
-          <p className="text-lg font-medium text-gray-500">{error || 'Session not found'}</p>
+        <div className="rounded-2xl border-2 border-dashed border-gray-200 py-12 text-center dark:border-gray-700">
+          <p className="text-lg font-medium text-gray-500 dark:text-gray-400">{error || 'Session not found'}</p>
           <Link href="/podcasts/sessions" className="mt-4 inline-block rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white hover:bg-violet-700">
             Back to Sessions
           </Link>
@@ -148,12 +148,12 @@ export default function SessionPlayerPage() {
     <div className="mx-auto max-w-3xl px-4 py-4 sm:px-6">
       {/* Compact header */}
       <div className="mb-3 flex items-center justify-between">
-        <Link href="/podcasts/sessions" className="text-sm text-gray-400 hover:text-gray-600 transition">
+        <Link href="/podcasts/sessions" className="text-sm text-gray-400 hover:text-gray-600 transition dark:hover:text-gray-300">
           ← Back
         </Link>
         <div className="text-right">
-          <h1 className="text-base font-bold text-gray-900 truncate max-w-[250px] sm:max-w-none">{session.title}</h1>
-          <div className="flex gap-2 text-[10px] text-gray-400 justify-end">
+          <h1 className="text-base font-bold text-gray-900 truncate max-w-[250px] sm:max-w-none dark:text-gray-100">{session.title}</h1>
+          <div className="flex gap-2 text-[10px] text-gray-400 justify-end dark:text-gray-500">
             <span>{session.segments.length} segments</span>
             {session.interrupts.length > 0 && (
               <span className="text-amber-500">{session.interrupts.length} edits</span>
@@ -163,7 +163,7 @@ export default function SessionPlayerPage() {
       </div>
 
       {error && (
-        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">
           {error}
           <button onClick={clearError} className="ml-2 font-medium underline">Dismiss</button>
         </div>
@@ -185,10 +185,10 @@ export default function SessionPlayerPage() {
 
       {/* Editing mode */}
       {mode === 'editing' && (
-        <div className="mb-3 rounded-2xl border border-violet-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-violet-100 px-4 py-3">
-            <h2 className="text-sm font-semibold text-violet-700">✏️ Edit from segment {currentSegmentIndex + 1}</h2>
-            <button onClick={handleCancelEdit} className="text-xs text-gray-400 hover:text-gray-600 transition">Cancel</button>
+        <div className="mb-3 rounded-2xl border border-violet-200 bg-white shadow-sm dark:border-violet-800 dark:bg-gray-900">
+          <div className="flex items-center justify-between border-b border-violet-100 px-4 py-3 dark:border-violet-800">
+            <h2 className="text-sm font-semibold text-violet-700 dark:text-violet-400">✏️ Edit from segment {currentSegmentIndex + 1}</h2>
+            <button onClick={handleCancelEdit} className="text-xs text-gray-400 hover:text-gray-600 transition dark:hover:text-gray-300">Cancel</button>
           </div>
 
           {chatMessages.length > 0 && (
@@ -203,14 +203,14 @@ export default function SessionPlayerPage() {
 
           {interruptLoading && chatMessages.length === 0 && (
             <div className="px-4 py-3">
-              <div className="flex items-center gap-2 text-sm text-violet-700">
+              <div className="flex items-center gap-2 text-sm text-violet-700 dark:text-violet-400">
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-violet-200 border-t-violet-600" />
                 Regenerating episode…
               </div>
             </div>
           )}
 
-          <div className="border-t border-violet-100 p-3">
+          <div className="border-t border-violet-100 p-3 dark:border-violet-800">
             <InterruptInput onSubmit={handleChatSubmit} disabled={interruptLoading} loading={interruptLoading} autoStartVoice={autoStartVoice} />
           </div>
         </div>
@@ -218,8 +218,8 @@ export default function SessionPlayerPage() {
 
       {/* Chat history (collapsed in listening mode) */}
       {mode === 'listening' && chatMessages.length > 0 && (
-        <details className="mb-3 rounded-2xl border border-gray-200 bg-white shadow-sm">
-          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700">
+        <details className="mb-3 rounded-2xl border border-gray-200 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
             💬 {chatMessages.length} edit{chatMessages.length !== 1 ? 's' : ''} made
           </summary>
           <div className="max-h-48 overflow-y-auto px-4 pb-3">
@@ -240,7 +240,7 @@ export default function SessionPlayerPage() {
         <a
           href={`${process.env.NEXT_PUBLIC_API_URL || ''}/api/podcasts/sessions/${session.id}/export-audio`}
           download
-          className="ml-auto flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200"
+          className="ml-auto flex items-center gap-1.5 rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600 transition hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"
         >
           <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />

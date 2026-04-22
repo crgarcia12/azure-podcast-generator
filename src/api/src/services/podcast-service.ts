@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { DefaultAzureCredential } from '@azure/identity';
 import { logger } from '../logger.js';
+import { synthesizeTranscript } from './edge-tts.js';
 import {
   getPodcastEpisodeById,
   getEpisodesByOwner,
@@ -121,16 +122,22 @@ function createMockPodcastService(): PodcastService {
         topic,
         script: buildMockScript(topic),
       });
-      const audioBuffer = createToneWaveBuffer(
-        Math.min(8000, Math.max(2500, draftEpisode.transcript.length * 1200)),
-      );
-      const episode: StoredPodcastEpisode = {
-        ...draftEpisode,
-        audioBuffer,
-        audioContentType: 'audio/wav',
-      };
-      savePodcastEpisode(episode);
-      return episode;
+
+      try {
+        const audioBuffer = await synthesizeTranscript(draftEpisode.transcript);
+        const episode: StoredPodcastEpisode = {
+          ...draftEpisode,
+          audioBuffer,
+          audioContentType: 'audio/mpeg',
+        };
+        savePodcastEpisode(episode);
+        return episode;
+      } catch (err) {
+        logger.warn({ err }, 'Edge TTS synthesis failed — saving episode without audio');
+        const episode: StoredPodcastEpisode = { ...draftEpisode };
+        savePodcastEpisode(episode);
+        return episode;
+      }
     },
     async getEpisodeById({ episodeId, ownerId }: PodcastLookupInput): Promise<StoredPodcastEpisode | null> {
       return getOwnedEpisode(episodeId, ownerId);
@@ -541,33 +548,4 @@ function toTitleCase(value: string): string {
     .split(/\s+/)
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
     .join(' ');
-}
-
-function createToneWaveBuffer(durationMs: number): Buffer {
-  const sampleRate = 16000;
-  const totalSamples = Math.floor((sampleRate * durationMs) / 1000);
-  const dataSize = totalSamples * 2;
-  const buffer = Buffer.alloc(44 + dataSize);
-
-  buffer.write('RIFF', 0);
-  buffer.writeUInt32LE(36 + dataSize, 4);
-  buffer.write('WAVE', 8);
-  buffer.write('fmt ', 12);
-  buffer.writeUInt32LE(16, 16);
-  buffer.writeUInt16LE(1, 20);
-  buffer.writeUInt16LE(1, 22);
-  buffer.writeUInt32LE(sampleRate, 24);
-  buffer.writeUInt32LE(sampleRate * 2, 28);
-  buffer.writeUInt16LE(2, 32);
-  buffer.writeUInt16LE(16, 34);
-  buffer.write('data', 36);
-  buffer.writeUInt32LE(dataSize, 40);
-
-  for (let sampleIndex = 0; sampleIndex < totalSamples; sampleIndex += 1) {
-    const frequency = sampleIndex % (sampleRate / 2) < sampleRate / 4 ? 440 : 660;
-    const amplitude = Math.sin((2 * Math.PI * frequency * sampleIndex) / sampleRate) * 0.18;
-    buffer.writeInt16LE(Math.floor(amplitude * 32767), 44 + sampleIndex * 2);
-  }
-
-  return buffer;
 }

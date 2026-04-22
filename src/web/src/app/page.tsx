@@ -56,32 +56,32 @@ export default function Home() {
 
       {/* Features */}
       <section className="mx-auto grid w-full max-w-5xl gap-6 px-4 py-16 sm:grid-cols-3 sm:px-6">
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 text-2xl">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-violet-100 text-2xl dark:bg-violet-900/40">
             ✍️
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">AI-Written Scripts</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">AI-Written Scripts</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
             GPT-4o writes natural host-and-guest dialogue with narrative arc,
             expert insights, and conversational flow.
           </p>
         </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-2xl">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-2xl dark:bg-blue-900/40">
             🗣️
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Natural Speech</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Natural Speech</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
             Azure Speech synthesizes the script with two distinct voices,
             creating a realistic podcast listening experience.
           </p>
         </div>
-        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
-          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-2xl">
+        <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+          <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-2xl dark:bg-amber-900/40">
             📱
           </div>
-          <h3 className="text-lg font-semibold text-gray-900">Listen Anywhere</h3>
-          <p className="mt-2 text-sm leading-relaxed text-gray-600">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Listen Anywhere</h3>
+          <p className="mt-2 text-sm leading-relaxed text-gray-600 dark:text-gray-400">
             Mobile-first design — generate and listen on the go.
             Download episodes to keep them forever.
           </p>

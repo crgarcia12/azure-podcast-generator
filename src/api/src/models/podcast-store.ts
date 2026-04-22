@@ -17,8 +17,8 @@ export interface PodcastEpisodeDraft {
 }
 
 export interface StoredPodcastEpisode extends PodcastEpisodeDraft {
-  audioBuffer: Buffer;
-  audioContentType: string;
+  audioBuffer?: Buffer;
+  audioContentType?: string;
 }
 
 const episodes = new Map<string, StoredPodcastEpisode>();

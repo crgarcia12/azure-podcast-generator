@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import NavBar from "./components/NavBar";
+import KeyboardShortcuts from "./components/KeyboardShortcuts";
+import ToastProvider from "./components/ToastProvider";
+import ThemeProvider from "./components/ThemeProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -24,8 +27,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
+        <script dangerouslySetInnerHTML={{ __html: `(function(){try{var t=localStorage.getItem('podcraft-theme');if(t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.classList.add('dark')}catch(e){}})()` }} />
         <script dangerouslySetInnerHTML={{ __html: `
           // Remove Next.js route announcer custom element to prevent aria-live conflicts
           (function() {
@@ -43,8 +47,11 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NavBar />
-        {children}
+        <ThemeProvider>
+          <NavBar />
+          <KeyboardShortcuts />
+          <ToastProvider>{children}</ToastProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

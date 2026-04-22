@@ -4,6 +4,7 @@ import { useEffect, useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiFetch } from '../lib/api';
+import { useToast } from '../components/ToastProvider';
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('');
@@ -11,6 +12,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('');
   const [registrationEnabled, setRegistrationEnabled] = useState<boolean | null>(null);
   const router = useRouter();
+  const { addToast } = useToast();
 
   useEffect(() => {
     apiFetch('/api/auth/registration-status')
@@ -34,10 +36,13 @@ export default function RegisterPage() {
         router.push('/login?registered=true');
       } else {
         const data = await res.json().catch(() => ({}));
-        setError(data.error || 'Registration failed. Please try again.');
+        const msg = data.error || 'Registration failed. Please try again.';
+        setError(msg);
+        addToast(msg, 'error');
       }
     } catch {
       setError('An error occurred. Please try again.');
+      addToast('An error occurred. Please try again.', 'error');
     }
   }
 
@@ -56,8 +61,8 @@ export default function RegisterPage() {
           <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-amber-100 text-3xl">
             🔒
           </div>
-          <h1 className="text-2xl font-bold text-gray-900">Registration Closed</h1>
-          <p className="text-gray-600">
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Registration Closed</h1>
+          <p className="text-gray-600 dark:text-gray-400">
             New account registration is currently disabled. Please contact an administrator
             if you need access.
           </p>
@@ -76,17 +81,17 @@ export default function RegisterPage() {
     <main className="flex min-h-[calc(100vh-57px)] items-center justify-center px-4">
       <div className="w-full max-w-md space-y-6">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900">Create an account</h1>
-          <p className="mt-1 text-sm text-gray-500">Join PodCraft and start generating podcasts</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Create an account</h1>
+          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Join PodCraft and start generating podcasts</p>
         </div>
 
         {error && (
-          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>
+          <p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-400">{error}</p>
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="username" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Username
             </label>
             <input
@@ -94,13 +99,13 @@ export default function RegisterPage() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
+              className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
               autoComplete="username"
               required
             />
           </div>
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-700 dark:text-gray-300">
               Password
             </label>
             <input
@@ -108,7 +113,7 @@ export default function RegisterPage() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200"
+              className="mt-1 block w-full rounded-xl border border-gray-300 px-4 py-2.5 text-gray-900 shadow-sm outline-none transition focus:border-violet-500 focus:ring-2 focus:ring-violet-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
               autoComplete="new-password"
               required
             />
@@ -121,9 +126,9 @@ export default function RegisterPage() {
           </button>
         </form>
 
-        <p className="text-center text-sm text-gray-500">
+        <p className="text-center text-sm text-gray-500 dark:text-gray-400">
           Already have an account?{' '}
-          <Link href="/login" className="font-medium text-violet-600 hover:underline">
+          <Link href="/login" className="font-medium text-violet-600 hover:underline dark:text-violet-400">
             Sign in
           </Link>
         </p>
