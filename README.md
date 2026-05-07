@@ -12,6 +12,7 @@ Create short, interview-style podcast episodes from a topic. Authenticated users
 - Lets signed-in users open `/podcasts` and submit a topic
 - Generates a host-and-guest transcript for the episode
 - Plays synthesized audio in the browser
+- Listeners can ask a question mid-episode (voice or text) and the host steers the conversation to answer it before the original episode resumes
 - Falls back to a mock provider for local development when Azure AI settings are not configured
 
 ## Stack
@@ -89,6 +90,8 @@ AZURE_OPENAI_API_VERSION=2024-10-21
 PODCAST_HOST_VOICE=en-US-JennyNeural
 PODCAST_GUEST_VOICE=en-US-GuyNeural
 ```
+
+The same `AZURE_OPENAI_*` and `AZURE_SPEECH_*` settings power the **Ask a question** feature: mid-episode listener questions are answered with the same provider, model deployment, and host/guest voices as the original episode.
 
 ## Useful commands
 

@@ -2,14 +2,24 @@ import crypto from 'node:crypto';
 import { DefaultAzureCredential } from '@azure/identity';
 import { logger } from '../logger.js';
 import {
+  appendSteeredSegment,
   getPodcastEpisodeById,
   getEpisodesByOwner,
+  getSteeredSegment,
   savePodcastEpisode,
   type PodcastEpisodeDraft,
   type StoredPodcastEpisode,
+  type StoredSteeredSegment,
+  type SteeredSegmentTurn,
 } from '../models/podcast-store.js';
 
-export type { PodcastEpisodeDraft, PodcastTranscriptTurn, StoredPodcastEpisode } from '../models/podcast-store.js';
+export type {
+  PodcastEpisodeDraft,
+  PodcastTranscriptTurn,
+  StoredPodcastEpisode,
+  StoredSteeredSegment,
+  SteeredSegmentTurn,
+} from '../models/podcast-store.js';
 
 const DEFAULT_OPENAI_API_VERSION = '2024-10-21';
 const DEFAULT_HOST_VOICE = 'en-US-JennyNeural';
@@ -71,13 +81,38 @@ interface PodcastListInput {
   ownerId: string;
 }
 
+export interface SteerSegmentInput {
+  ownerId: string;
+  episodeId: string;
+  question: string;
+  playbackPositionSeconds: number;
+}
+
+export interface SteerSegmentLookupInput {
+  ownerId: string;
+  episodeId: string;
+  segmentId: string;
+}
+
+export const QUESTION_MIN_LENGTH = 1;
+export const QUESTION_MAX_LENGTH = 500;
+
 export interface PodcastService {
   createEpisode(input: CreatePodcastInput): Promise<StoredPodcastEpisode>;
   getEpisodeById(input: PodcastLookupInput): Promise<StoredPodcastEpisode | null>;
   listEpisodes(input: PodcastListInput): Promise<StoredPodcastEpisode[]>;
+  generateSteeredSegment(input: SteerSegmentInput): Promise<StoredSteeredSegment>;
+  getSteeredSegment(input: SteerSegmentLookupInput): Promise<StoredSteeredSegment | null>;
 }
 
 export class PodcastConfigurationError extends Error {}
+
+export class PodcastEpisodeNotFoundError extends Error {
+  constructor(message = 'Podcast not found') {
+    super(message);
+    this.name = 'PodcastEpisodeNotFoundError';
+  }
+}
 
 export class PodcastDependencyError extends Error {
   constructor(message: string, public readonly draftEpisode?: PodcastEpisodeDraft) {
@@ -114,6 +149,9 @@ export function createPodcastService(): PodcastService {
 }
 
 function createMockPodcastService(): PodcastService {
+  const mockHostVoice = process.env.PODCAST_HOST_VOICE?.trim() || DEFAULT_HOST_VOICE;
+  const mockGuestVoice = process.env.PODCAST_GUEST_VOICE?.trim() || DEFAULT_GUEST_VOICE;
+
   return {
     async createEpisode({ ownerId, topic }: CreatePodcastInput): Promise<StoredPodcastEpisode> {
       const draftEpisode = createDraftEpisode({
@@ -137,6 +175,46 @@ function createMockPodcastService(): PodcastService {
     },
     async listEpisodes({ ownerId }: PodcastListInput): Promise<StoredPodcastEpisode[]> {
       return getEpisodesByOwner(ownerId);
+    },
+    async generateSteeredSegment(
+      input: SteerSegmentInput,
+    ): Promise<StoredSteeredSegment> {
+      const episode = getOwnedEpisode(input.episodeId, input.ownerId);
+      if (!episode) {
+        throw new PodcastEpisodeNotFoundError('Podcast not found');
+      }
+
+      const transcriptSoFar = sliceTranscriptByPlayback(episode, input.playbackPositionSeconds);
+      const turns = buildMockSteeredTurns({
+        topic: episode.topic,
+        transcriptSoFar,
+        question: input.question,
+        hostVoice: mockHostVoice,
+        guestVoice: mockGuestVoice,
+      });
+      const audioBuffer = createToneWaveBuffer(
+        Math.min(7000, Math.max(2000, turns.length * 1500)),
+      );
+      const segment: StoredSteeredSegment = {
+        id: crypto.randomUUID(),
+        episodeId: episode.id,
+        question: input.question,
+        playbackPositionSeconds: input.playbackPositionSeconds,
+        createdAt: new Date().toISOString(),
+        durationSeconds: estimateAudioDurationSeconds(audioBuffer),
+        transcript: turns,
+        audioBuffer,
+        audioContentType: 'audio/wav',
+      };
+      appendSteeredSegment(episode.id, segment);
+      return segment;
+    },
+    async getSteeredSegment({ episodeId, ownerId, segmentId }) {
+      const episode = getOwnedEpisode(episodeId, ownerId);
+      if (!episode) {
+        return null;
+      }
+      return getSteeredSegment(episodeId, segmentId) ?? null;
     },
   };
 }
@@ -177,6 +255,65 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
     async listEpisodes({ ownerId }: PodcastListInput): Promise<StoredPodcastEpisode[]> {
       return getEpisodesByOwner(ownerId);
     },
+    async generateSteeredSegment(
+      input: SteerSegmentInput,
+    ): Promise<StoredSteeredSegment> {
+      const episode = getOwnedEpisode(input.episodeId, input.ownerId);
+      if (!episode) {
+        throw new PodcastEpisodeNotFoundError('Podcast not found');
+      }
+
+      const transcriptSoFar = sliceTranscriptByPlayback(episode, input.playbackPositionSeconds);
+      const turns = await generateSteeredTurnsWithAzure({
+        config,
+        topic: episode.topic,
+        transcriptSoFar,
+        question: input.question,
+      });
+      const segmentDraft: PodcastEpisodeDraft = {
+        id: crypto.randomUUID(),
+        ownerId: episode.ownerId,
+        topic: episode.topic,
+        title: 'Listener question',
+        summary: input.question,
+        transcript: turns.map((turn) => ({
+          id: crypto.randomUUID(),
+          speaker: turn.speaker,
+          speakerLabel: turn.speakerLabel,
+          voice: turn.voice,
+          text: turn.text,
+        })),
+        createdAt: new Date().toISOString(),
+      };
+
+      const audioBuffer = await synthesizeAudioWithAzure(config, segmentDraft);
+      const segment: StoredSteeredSegment = {
+        id: segmentDraft.id,
+        episodeId: episode.id,
+        question: input.question,
+        playbackPositionSeconds: input.playbackPositionSeconds,
+        createdAt: segmentDraft.createdAt,
+        durationSeconds: estimateAudioDurationSeconds(audioBuffer),
+        transcript: segmentDraft.transcript.map((turn) => ({
+          id: turn.id,
+          speaker: turn.speaker,
+          speakerLabel: turn.speakerLabel,
+          voice: turn.voice,
+          text: turn.text,
+        })),
+        audioBuffer,
+        audioContentType: 'audio/mpeg',
+      };
+      appendSteeredSegment(episode.id, segment);
+      return segment;
+    },
+    async getSteeredSegment({ episodeId, ownerId, segmentId }) {
+      const episode = getOwnedEpisode(episodeId, ownerId);
+      if (!episode) {
+        return null;
+      }
+      return getSteeredSegment(episodeId, segmentId) ?? null;
+    },
   };
 }
 
@@ -190,6 +327,12 @@ function createUnavailablePodcastService(error: PodcastConfigurationError): Podc
     },
     async listEpisodes(): Promise<StoredPodcastEpisode[]> {
       return [];
+    },
+    async generateSteeredSegment(): Promise<StoredSteeredSegment> {
+      throw error;
+    },
+    async getSteeredSegment(): Promise<StoredSteeredSegment | null> {
+      return null;
     },
   };
 }
@@ -570,4 +713,192 @@ function createToneWaveBuffer(durationMs: number): Buffer {
   }
 
   return buffer;
+}
+
+const SPEECH_WORDS_PER_SECOND = 2.5;
+
+function turnDurationSeconds(text: string): number {
+  const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+  return Math.max(1.5, wordCount / SPEECH_WORDS_PER_SECOND);
+}
+
+export function sliceTranscriptByPlayback(
+  episode: StoredPodcastEpisode,
+  playbackPositionSeconds: number,
+): StoredPodcastEpisode['transcript'] {
+  if (!Number.isFinite(playbackPositionSeconds) || playbackPositionSeconds <= 0) {
+    return [];
+  }
+
+  const result: StoredPodcastEpisode['transcript'] = [];
+  let cumulative = 0;
+
+  for (const turn of episode.transcript) {
+    const duration = turnDurationSeconds(turn.text);
+    if (cumulative >= playbackPositionSeconds) {
+      break;
+    }
+    result.push(turn);
+    cumulative += duration;
+  }
+
+  return result;
+}
+
+function buildMockSteeredTurns({
+  topic,
+  transcriptSoFar,
+  question,
+  hostVoice,
+  guestVoice,
+}: {
+  topic: string;
+  transcriptSoFar: StoredPodcastEpisode['transcript'];
+  question: string;
+  hostVoice: string;
+  guestVoice: string;
+}): SteeredSegmentTurn[] {
+  const lastReference = transcriptSoFar.length
+    ? `the thread we were just exploring`
+    : `the heart of ${topic}`;
+
+  return [
+    {
+      id: crypto.randomUUID(),
+      speaker: 'host',
+      speakerLabel: 'Host',
+      voice: hostVoice,
+      text: `Hold that thought — a listener just sent in a great question. They want to know: ${question} Let's hand that one to our guest.`,
+    },
+    {
+      id: crypto.randomUUID(),
+      speaker: 'guest',
+      speakerLabel: 'Guest',
+      voice: guestVoice,
+      text: `That's a fantastic question — ${question} Here's the short version: it's a thought experiment that sits right at the edge of what general relativity allows. Each eye crosses the event horizon at a slightly different moment, but because no signal can climb back out, the brain stops receiving anything from the eye that crossed first — so the picture you experience is exactly what light from outside the black hole still reaches you, until your second eye crosses too. There's no dramatic split-screen — just an ordinary view that ends, on each side, at slightly different instants.`,
+    },
+    {
+      id: crypto.randomUUID(),
+      speaker: 'host',
+      speakerLabel: 'Host',
+      voice: hostVoice,
+      text: `Brilliant — thanks for asking that. Let's pick up ${lastReference} and keep going from where we left off in this episode about ${topic}.`,
+    },
+  ];
+}
+
+interface AzureSteerInput {
+  config: AzurePodcastConfig;
+  topic: string;
+  transcriptSoFar: StoredPodcastEpisode['transcript'];
+  question: string;
+}
+
+async function generateSteeredTurnsWithAzure({
+  config,
+  topic,
+  transcriptSoFar,
+  question,
+}: AzureSteerInput): Promise<SteeredSegmentTurn[]> {
+  const headers = await getAzureOpenAiHeaders(config);
+  const transcriptText = transcriptSoFar
+    .map((turn) => `${turn.speakerLabel}: ${turn.text}`)
+    .join('\n');
+
+  const response = await fetch(
+    `${config.openAiEndpoint}/openai/deployments/${encodeURIComponent(config.openAiDeployment)}/chat/completions?api-version=${encodeURIComponent(config.openAiApiVersion)}`,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        messages: [
+          {
+            role: 'system',
+            content: `You produce short interjection segments for an interview-style podcast. A listener has asked a question mid-episode. Respond with strict JSON {"turns":[{"speaker":"host|guest","text":"…"}, …]} containing exactly three turns in this order: (1) the host acknowledges the listener question and redirects to the guest, (2) the guest answers the question naturally and concretely, (3) the host bridges back to the topic so the original interview can continue. Do not wrap the JSON in markdown.`,
+          },
+          {
+            role: 'user',
+            content: `Topic: ${topic}\nTranscript so far:\n${transcriptText}\n\nListener question: ${question}`,
+          },
+        ],
+        temperature: 0.7,
+        max_tokens: 800,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const responseBody = await response.text();
+    throw new PodcastDependencyError(
+      `Steered segment generation failed with Azure OpenAI (${response.status}). ${responseBody.slice(0, 200)}`,
+    );
+  }
+
+  const body = (await response.json()) as {
+    choices?: Array<{ message?: { content?: string } }>;
+  };
+  const rawContent = body.choices?.[0]?.message?.content;
+  if (!rawContent) {
+    throw new PodcastDependencyError('Azure OpenAI returned an empty steered segment response.');
+  }
+
+  const jsonText = extractJsonObject(rawContent);
+  const parsed = JSON.parse(jsonText) as { turns?: unknown };
+  if (!Array.isArray(parsed.turns) || parsed.turns.length < 3) {
+    throw new PodcastDependencyError('Azure OpenAI returned an invalid steered segment.');
+  }
+
+  const turns: SteeredSegmentTurn[] = [];
+  for (const [index, raw] of parsed.turns.entries()) {
+    if (typeof raw !== 'object' || raw === null) continue;
+    const turn = raw as { speaker?: unknown; text?: unknown };
+    const text = typeof turn.text === 'string' ? turn.text.trim() : '';
+    if (!text) continue;
+
+    let speaker: 'host' | 'guest';
+    if (turn.speaker === 'host' || turn.speaker === 'guest') {
+      speaker = turn.speaker;
+    } else {
+      speaker = index === 1 ? 'guest' : 'host';
+    }
+
+    const speakerLabel: 'Host' | 'Guest' = speaker === 'host' ? 'Host' : 'Guest';
+    turns.push({
+      id: crypto.randomUUID(),
+      speaker,
+      speakerLabel,
+      voice: speaker === 'host' ? config.hostVoice : config.guestVoice,
+      text,
+    });
+  }
+
+  if (turns.length < 3) {
+    throw new PodcastDependencyError('Azure OpenAI returned too few turns for the steered segment.');
+  }
+
+  // Enforce the host → guest → host arc structurally.
+  const first = turns[0];
+  const last = turns[turns.length - 1];
+  first.speaker = 'host';
+  first.speakerLabel = 'Host';
+  first.voice = config.hostVoice;
+  last.speaker = 'host';
+  last.speakerLabel = 'Host';
+  last.voice = config.hostVoice;
+
+  return turns;
+}
+
+function estimateAudioDurationSeconds(buffer: Buffer): number {
+  if (buffer.length < 44 || buffer.subarray(0, 4).toString('ascii') !== 'RIFF') {
+    // Fallback estimate for non-WAV (e.g. mp3 from Azure): 16 kbps * sane factor.
+    return Math.max(2, Math.round(buffer.length / 16000));
+  }
+
+  const byteRate = buffer.readUInt32LE(28);
+  const dataSize = buffer.readUInt32LE(40);
+  if (!byteRate) {
+    return Math.max(2, Math.round(dataSize / 32000));
+  }
+  return Math.max(1, dataSize / byteRate);
 }
