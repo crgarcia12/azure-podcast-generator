@@ -39,6 +39,15 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
       return;
     }
 
+    // `?since=N` lets a reconnecting client skip segments it has already heard
+    // — used after the listener submits a question so the show resumes
+    // forward instead of replaying from the start.
+    const rawSince = Array.isArray(req.query.since) ? req.query.since[0] : req.query.since;
+    const since = (() => {
+      const n = Number.parseInt(typeof rawSince === 'string' ? rawSince : '', 10);
+      return Number.isFinite(n) && n > 0 ? n : 0;
+    })();
+
     const controller = new AbortController();
     res.on('close', () => controller.abort());
     res.on('error', () => controller.abort());
@@ -64,7 +73,7 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
     }, 15_000);
 
     try {
-      for await (const segment of service.generateStream(sessionId, controller.signal)) {
+      for await (const segment of service.generateStream(sessionId, controller.signal, since)) {
         if (controller.signal.aborted) break;
         res.write(`event: segment\ndata: ${JSON.stringify(segment)}\n\n`);
       }

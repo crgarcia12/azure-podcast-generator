@@ -16,23 +16,95 @@ type Phase = 'idle' | 'starting' | 'playing' | 'asking' | 'error';
 const HOST_NAME = 'Riley';
 const GUEST_NAME = 'Sam';
 
-function pickVoice(voices: SpeechSynthesisVoice[], speaker: Speaker): SpeechSynthesisVoice | null {
+// Voice name hints in priority order. Lower-cased substrings — first match wins.
+// Covers Apple (Safari/iOS), Microsoft Edge/Windows, Google Chrome, plus a
+// generic gendered fallback so even unknown engines pick distinct voices.
+const HOST_VOICE_HINTS = [
+  // Microsoft Natural / Edge
+  'aria',
+  'jenny',
+  'jessa',
+  'libby',
+  // Apple
+  'samantha',
+  'allison',
+  'serena',
+  'karen',
+  'tessa',
+  'victoria',
+  'ava',
+  'susan',
+  'moira',
+  'fiona',
+  // Google
+  'google us english female',
+  'google uk english female',
+  'google us english',
+  // Generic gender hints (some engines report "Microsoft Zira - English (United States)" etc)
+  'female',
+  'woman',
+  'zira',
+];
+
+const GUEST_VOICE_HINTS = [
+  // Microsoft Natural / Edge
+  'guy',
+  'davis',
+  'tony',
+  'ryan',
+  'andrew',
+  'brian',
+  // Apple
+  'daniel',
+  'fred',
+  'alex',
+  'tom',
+  'oliver',
+  'arthur',
+  'lee',
+  'bruce',
+  'aaron',
+  'rishi',
+  // Google
+  'google us english male',
+  'google uk english male',
+  // Generic gender hints
+  'male',
+  'man',
+  'mark',
+  'david',
+];
+
+function chooseVoice(
+  voices: SpeechSynthesisVoice[],
+  hints: string[],
+  avoid: SpeechSynthesisVoice | null,
+): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
   const en = voices.filter((v) => v.lang.toLowerCase().startsWith('en'));
   const pool = en.length ? en : voices;
 
-  const hostHints = ['samantha', 'aria', 'jenny', 'female', 'allison', 'serena', 'karen', 'tessa', 'victoria'];
-  const guestHints = ['daniel', 'guy', 'davis', 'male', 'fred', 'alex', 'tom', 'oliver', 'arthur'];
-  const hints = speaker === 'host' ? hostHints : guestHints;
-
   for (const hint of hints) {
-    const found = pool.find((v) => v.name.toLowerCase().includes(hint));
+    const found = pool.find(
+      (v) => v.name.toLowerCase().includes(hint) && (!avoid || v.voiceURI !== avoid.voiceURI),
+    );
     if (found) return found;
   }
 
-  // Fallback: use first voice for host, an *odd-indexed* voice for guest so they differ.
-  if (speaker === 'host') return pool[0];
-  return pool[Math.min(1, pool.length - 1)];
+  // Fallback: any voice that isn't `avoid`.
+  const distinct = pool.find((v) => !avoid || v.voiceURI !== avoid.voiceURI);
+  return distinct ?? pool[0] ?? null;
+}
+
+interface VoicePair {
+  host: SpeechSynthesisVoice | null;
+  guest: SpeechSynthesisVoice | null;
+}
+
+function selectVoicePair(voices: SpeechSynthesisVoice[]): VoicePair {
+  const host = chooseVoice(voices, HOST_VOICE_HINTS, null);
+  const guest = chooseVoice(voices, GUEST_VOICE_HINTS, host);
+  return { host, guest };
 }
 
 export default function Home() {
@@ -49,7 +121,12 @@ export default function Home() {
   const speakingRef = useRef<boolean>(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+  const voicePairRef = useRef<VoicePair>({ host: null, guest: null });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  // Highest segment index we've received so far. -1 means none yet.
+  // Used as `?since=lastIndex+1` when reconnecting after asking a question
+  // so the server doesn't replay segments we already heard.
+  const lastSegmentIndexRef = useRef<number>(-1);
   const speechSupported = useMemo(
     () => typeof window !== 'undefined' && 'speechSynthesis' in window,
     [],
@@ -60,6 +137,19 @@ export default function Home() {
     if (!speechSupported) return;
     const sync = () => {
       voicesRef.current = window.speechSynthesis.getVoices();
+      // Re-pick voices any time the list changes — only updates if not yet chosen
+      // OR if previous choices are no longer in the list.
+      const have = voicesRef.current;
+      const stillThere = (v: SpeechSynthesisVoice | null) =>
+        !v || have.some((x) => x.voiceURI === v.voiceURI);
+      if (
+        !voicePairRef.current.host ||
+        !voicePairRef.current.guest ||
+        !stillThere(voicePairRef.current.host) ||
+        !stillThere(voicePairRef.current.guest)
+      ) {
+        voicePairRef.current = selectVoicePair(have);
+      }
     };
     sync();
     window.speechSynthesis.addEventListener?.('voiceschanged', sync);
@@ -79,16 +169,32 @@ export default function Home() {
     speakingRef.current = true;
     setCurrentSegment(next);
 
+    // Make sure we have a voice pair — voices may have just become available.
+    if (!voicePairRef.current.host || !voicePairRef.current.guest) {
+      const fresh = window.speechSynthesis.getVoices();
+      if (fresh.length) {
+        voicesRef.current = fresh;
+        voicePairRef.current = selectVoicePair(fresh);
+      }
+    }
+
     const utter = new SpeechSynthesisUtterance(next.text);
-    const voice = pickVoice(voicesRef.current, next.speaker);
-    if (voice) utter.voice = voice;
-    utter.rate = next.speaker === 'host' ? 1 : 1.02;
-    utter.pitch = next.speaker === 'host' ? 1 : 0.92;
+    const chosen =
+      next.speaker === 'host' ? voicePairRef.current.host : voicePairRef.current.guest;
+    if (chosen) utter.voice = chosen;
+    // Strong pitch + rate distinction so even when the engine collapses to a
+    // single voice (some Linux/iOS configs) the host and guest sound different.
+    if (next.speaker === 'host') {
+      utter.rate = 1.02;
+      utter.pitch = 1.18;
+    } else {
+      utter.rate = 0.97;
+      utter.pitch = 0.82;
+    }
     utter.volume = 1;
     utter.onend = () => {
       speakingRef.current = false;
       utteranceRef.current = null;
-      // Schedule next on the macrotask queue so React state has a chance to flush.
       setTimeout(() => speakNext(), 30);
     };
     utter.onerror = () => {
@@ -126,6 +232,7 @@ export default function Home() {
     closeStream();
     cancelSpeech();
     queueRef.current = [];
+    lastSegmentIndexRef.current = -1;
     setCurrentSegment(null);
     setSessionId(null);
     setStreamFinished(false);
@@ -145,9 +252,10 @@ export default function Home() {
   }, [closeStream, cancelSpeech]);
 
   const openStream = useCallback(
-    (id: string) => {
+    (id: string, sinceIndex = 0) => {
       closeStream();
-      const url = toApiUrl(`/api/cast/${encodeURIComponent(id)}/stream`);
+      const sinceParam = sinceIndex > 0 ? `?since=${sinceIndex}` : '';
+      const url = toApiUrl(`/api/cast/${encodeURIComponent(id)}/stream${sinceParam}`);
       const es = new EventSource(url, { withCredentials: true });
       eventSourceRef.current = es;
 
@@ -159,6 +267,9 @@ export default function Home() {
         try {
           const segment = JSON.parse((event as MessageEvent).data) as CastSegment;
           if (typeof segment?.text !== 'string' || !segment.text.trim()) return;
+          if (typeof segment.index === 'number' && segment.index > lastSegmentIndexRef.current) {
+            lastSegmentIndexRef.current = segment.index;
+          }
           queueRef.current.push(segment);
           if (!speakingRef.current) speakNext();
         } catch {
@@ -172,8 +283,6 @@ export default function Home() {
       });
 
       es.addEventListener('error', () => {
-        // Browsers fire 'error' on close too; only flip to error if we never got
-        // anything and haven't completed.
         if (!queueRef.current.length && !speakingRef.current && !streamFinished) {
           setError('Lost connection. Tap Restart to try again.');
           setPhase('error');
@@ -207,8 +316,9 @@ export default function Home() {
         setSessionId(data.id);
         setTopic(data.topic);
         setStreamFinished(false);
+        lastSegmentIndexRef.current = -1;
         setPhase('playing');
-        openStream(data.id);
+        openStream(data.id, 0);
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Failed to start podcast.';
         setError(message);
@@ -225,10 +335,13 @@ export default function Home() {
 
   const handleAskOpen = useCallback(() => {
     if (!sessionId) return;
+    // Stop the show while the listener is typing — but DON'T close the stream
+    // here. The server is still emitting outline beats; we just suppress
+    // playback. When the question lands the server will swap to answer beats
+    // and we'll resume audio with those.
     cancelSpeech();
     queueRef.current = [];
     setCurrentSegment(null);
-    setStreamFinished(false);
     setQuestionInput('');
     setPhase('asking');
   }, [cancelSpeech, sessionId]);
@@ -236,11 +349,11 @@ export default function Home() {
   const handleAskCancel = useCallback(() => {
     setQuestionInput('');
     setPhase('playing');
-    // If a stream is still open, the host will resume on its own once the next
-    // segment lands. If the stream had already ended, reopen to keep things alive.
+    // If the stream had already wrapped (event: done), reopen from where we
+    // left off so further activity (or another question) keeps working.
     if (sessionId && !eventSourceRef.current) {
       setStreamFinished(false);
-      openStream(sessionId);
+      openStream(sessionId, lastSegmentIndexRef.current + 1);
     }
   }, [openStream, sessionId]);
 
@@ -259,10 +372,18 @@ export default function Home() {
           const data = await res.json().catch(() => null);
           throw new Error(data?.error || `Server returned ${res.status}`);
         }
-        // Reopen the stream so we get fresh segments that include the answer.
-        if (sessionId) {
+        // Drop any segments that streamed in while the listener was typing —
+        // we want the next thing they hear to be the host addressing their
+        // question, not stale outline content.
+        queueRef.current = [];
+        cancelSpeech();
+        // Reopen from the next unheard segment (the answer beat the server
+        // queues will start at lastIndex+1 onward). If the stream is still
+        // open we leave it — the server will pick up the question on its
+        // next iteration and emit the answer beats.
+        if (!eventSourceRef.current) {
           setStreamFinished(false);
-          openStream(sessionId);
+          openStream(sessionId, lastSegmentIndexRef.current + 1);
         }
         setQuestionInput('');
         setPhase('playing');
@@ -272,7 +393,7 @@ export default function Home() {
         setPhase('error');
       }
     },
-    [openStream, questionInput, sessionId],
+    [cancelSpeech, openStream, questionInput, sessionId],
   );
 
   const speakerLabel = currentSegment

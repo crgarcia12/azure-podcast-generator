@@ -171,5 +171,99 @@ describe('cast endpoints', () => {
       expect(allText.toLowerCase()).toContain('listener');
       expect(allText.toLowerCase()).toContain('modern road bike');
     });
+
+    it('answers with a multi-beat exchange that quotes the question text verbatim', async () => {
+      const app = createApp();
+      const create = await request(app).post('/api/cast').send({ topic: 'rome' });
+      const sessionId = create.body.id as string;
+
+      await request(app)
+        .post(`/api/cast/${sessionId}/question`)
+        .send({ question: 'Why did the western empire really collapse?' });
+
+      const res = await request(app)
+        .get(`/api/cast/${sessionId}/stream`)
+        .buffer(true)
+        .parse((response, callback) => {
+          let data = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => {
+            data += chunk;
+          });
+          response.on('end', () => callback(null, data));
+        });
+
+      const events = parseEvents(res.body as unknown as string);
+      const segments = events
+        .filter((e) => e.event === 'segment')
+        .map((e) => e.data as { speaker: string; text: string; index: number });
+
+      // The listener question must be quoted verbatim in the host's setup line —
+      // proving the answer is genuinely about THIS question, not a generic stock answer.
+      expect(segments[0].speaker).toBe('host');
+      expect(segments[0].text).toContain('Why did the western empire really collapse');
+
+      // The answer is a multi-beat exchange (≥3 beats / 6 segments) before resuming the outline.
+      // Find where outline content starts (the outline opener mentions "Welcome back to the show").
+      const outlineStart = segments.findIndex((s) => s.text.includes('Welcome back to the show'));
+      expect(outlineStart).toBeGreaterThanOrEqual(6);
+    });
+  });
+
+  describe('GET /api/cast/:id/stream?since=N', () => {
+    it('skips already-heard segments when reconnecting', async () => {
+      const app = createApp();
+      const create = await request(app).post('/api/cast').send({ topic: 'mars exploration' });
+      const sessionId = create.body.id as string;
+
+      // First connection: fully drain the stream (so all segments are persisted in the session).
+      await request(app)
+        .get(`/api/cast/${sessionId}/stream`)
+        .buffer(true)
+        .parse((response, callback) => {
+          let data = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => {
+            data += chunk;
+          });
+          response.on('end', () => callback(null, data));
+        });
+
+      // Inject a question — the next reconnect should jump straight to the answer.
+      await request(app)
+        .post(`/api/cast/${sessionId}/question`)
+        .send({ question: 'When will humans set foot on Mars?' });
+
+      // Reconnect with `since=1000` (well past any historical index) — only the
+      // newly-emitted answer segments (indexed >= 1000? no — only segments whose
+      // index is >= since). With since=1000 and current segments < 100, NO old
+      // segments should replay, only fresh answer segments will arrive.
+      const res = await request(app)
+        .get(`/api/cast/${sessionId}/stream?since=1000`)
+        .buffer(true)
+        .parse((response, callback) => {
+          let data = '';
+          response.setEncoding('utf8');
+          response.on('data', (chunk: string) => {
+            data += chunk;
+          });
+          response.on('end', () => callback(null, data));
+        });
+
+      const events = parseEvents(res.body as unknown as string);
+      const segments = events
+        .filter((e) => e.event === 'segment')
+        .map((e) => e.data as { speaker: string; text: string; index: number });
+
+      // Every emitted segment is the answer to the listener question — no replay
+      // of the original outline.
+      expect(segments.length).toBeGreaterThan(0);
+      const allText = segments.map((s) => s.text).join(' ');
+      expect(allText.toLowerCase()).toContain('listener');
+      expect(allText).toContain('When will humans set foot on Mars');
+      // No outline opener — that line lives in already-heard segments and `since`
+      // skipped it.
+      expect(allText.includes('Welcome back to the show')).toBe(false);
+    });
   });
 });

@@ -149,12 +149,82 @@ function buildOutline(topic: string): PlannedBeat[] {
   ];
 }
 
-function buildAnswerBeat(topic: string, question: string): PlannedBeat {
-  const trimmed = question.replace(/[?.!]+$/, '');
-  return {
-    hostLine: `Hold on — we just got a great question from a listener: "${trimmed}". Let's pause the thread and hear your take on that.`,
-    guestLine: `Really good question. When it comes to ${topic}, the honest answer is that it depends on what you focus on, but a useful frame is to look at intent, context, and consequences. ${trimmed.toLowerCase().startsWith('why') ? 'The reasons trace back to the early decisions we talked about.' : trimmed.toLowerCase().startsWith('how') ? 'The mechanism is more interesting than most people realise.' : 'It connects directly to the broader thread we were just on.'} Then we can pick up where we left off.`,
-  };
+function classifyQuestion(lower: string): 'why' | 'how' | 'what' | 'when' | 'who' | 'where' | 'yesno' | 'open' {
+  if (/^why\b/.test(lower)) return 'why';
+  if (/^how\b/.test(lower)) return 'how';
+  if (/^what\b/.test(lower)) return 'what';
+  if (/^when\b/.test(lower)) return 'when';
+  if (/^who\b/.test(lower)) return 'who';
+  if (/^where\b/.test(lower)) return 'where';
+  if (/^(is|are|was|were|do|does|did|can|could|should|would|will|has|have|had)\b/.test(lower)) return 'yesno';
+  return 'open';
+}
+
+function buildAnswerBeats(topic: string, question: string): PlannedBeat[] {
+  const trimmed = question.replace(/[?.!]+$/, '').trim();
+  const lower = trimmed.toLowerCase();
+  const kind = classifyQuestion(lower);
+
+  const setupGuest = (() => {
+    switch (kind) {
+      case 'why':
+        return `That cuts right to the heart of ${topic}. The "why" sits at the intersection of motivation, opportunity, and timing — and ignoring any of those misses the real story.`;
+      case 'how':
+        return `Great mechanics question. The "how" of ${topic} is where the abstract stuff hits the ground — there are concrete steps, decisions, and trade-offs that most takes skip over entirely.`;
+      case 'what':
+        return `Definitions matter here, especially with ${topic} — different camps mean different things by the same words, and that's where a surprising amount of the disagreement actually lives.`;
+      case 'when':
+        return `Chronology is more important here than people realise. The timing of ${topic} is part of why it had the impact it did.`;
+      case 'who':
+        return `The cast of characters around ${topic} is genuinely fascinating — there are obvious names, and then a few quiet protagonists most people have never heard of.`;
+      case 'where':
+        return `Geography matters more in ${topic} than people give it credit for — the place shapes the conditions, and the conditions shape what's possible.`;
+      case 'yesno':
+        return `Short answer is "it depends" — long answer is where ${topic} gets interesting. There's a yes-version and a no-version, and the difference between them tells you what the real question is.`;
+      default:
+        return `That's a really good angle on ${topic}. Most people don't ask it that way, and it cuts straight to the part of the story that's usually glossed over.`;
+    }
+  })();
+
+  const meatGuest = (() => {
+    switch (kind) {
+      case 'why':
+        return `The "why" comes down to two things: the conditions that made ${topic} possible at that particular moment, and the people who saw the opening. Strip away either and you don't get the same outcome.`;
+      case 'how':
+        return `Step one is recognising that ${topic} doesn't happen in a single move — it's a sequence. Step two: each step depends on the previous one in ways that aren't obvious until you're inside it. That's why the "how" gets misread so often.`;
+      case 'what':
+        return `Strip ${topic} down to its atomic elements and you get something simpler than the usual narrative suggests — but the simple version is the powerful one. Once you see it, you can't unsee how it shapes everything downstream.`;
+      case 'when':
+        return `The window mattered enormously. Earlier, ${topic} would have been impossible. Later, the moment would have passed. The timing wasn't accidental — it was the product of decades of pressure finally finding a release valve.`;
+      case 'who':
+        return `Three names you should know, and probably don't all of them. Each made a choice the others didn't see coming, and the combination of those choices is what made ${topic} what it became.`;
+      case 'where':
+        return `The setting did most of the heavy lifting people credit to the personalities. ${topic} couldn't have unfolded the same way anywhere else — the local conditions selected for exactly the kind of approach that ended up working.`;
+      case 'yesno':
+        return `Honest answer: yes and no, and the difference between yes and no is where ${topic} stops being a trivia question and starts being a genuinely useful framework. Most people stop at the headline; the real value is one layer down.`;
+      default:
+        return `The core of "${trimmed}" is something a lot of people get wrong about ${topic}. Conventional wisdom says one thing, but if you actually trace the evidence, you end up somewhere more nuanced — and frankly more useful.`;
+    }
+  })();
+
+  return [
+    {
+      hostLine: `Hold on — we just got a great question from a listener. They're asking: "${trimmed}". Let's pause the thread and dig into that.`,
+      guestLine: setupGuest,
+    },
+    {
+      hostLine: `So unpack it for us — what's the honest answer to "${trimmed}"?`,
+      guestLine: meatGuest,
+    },
+    {
+      hostLine: `That's a much richer answer than the one-liner I was expecting. Anything you'd add for someone who really wants to sit with that question?`,
+      guestLine: `Just that ${topic} rewards patience here — the deeper you go on "${trimmed}", the more the surface answer falls apart in interesting ways. And the listener who asked clearly already senses that.`,
+    },
+    {
+      hostLine: `Beautifully said. Listener, thanks for that one — it pushed the conversation somewhere good. Now, picking up where we left off…`,
+      guestLine: `Yes, let's get back to it.`,
+    },
+  ];
 }
 
 export interface CastService {
@@ -163,8 +233,14 @@ export interface CastService {
   addQuestion(id: string, question: string): { questionId: string };
   // Async generator that yields one segment at a time, awaiting between
   // segments to emulate natural pacing and to give listeners time to ask.
-  // Resolves when the session is finished or when `signal` aborts.
-  generateStream(id: string, abort: AbortSignal): AsyncGenerator<CastSegment, void, void>;
+  // `since` skips already-heard segments when a client reconnects (e.g. after
+  // submitting a question) — that prevents the show from replaying from the
+  // start. Resolves when the session is finished or when `signal` aborts.
+  generateStream(
+    id: string,
+    abort: AbortSignal,
+    since?: number,
+  ): AsyncGenerator<CastSegment, void, void>;
 }
 
 export function createCastService(): CastService {
@@ -218,25 +294,50 @@ export function createCastService(): CastService {
       return { questionId };
     },
 
-    async *generateStream(id: string, abort: AbortSignal): AsyncGenerator<CastSegment, void, void> {
+    async *generateStream(
+      id: string,
+      abort: AbortSignal,
+      since = 0,
+    ): AsyncGenerator<CastSegment, void, void> {
       const session = sessions.get(id);
       if (!session) {
         throw new CastNotFoundError();
       }
 
-      // Replay any segments already produced (for late-joining clients).
+      // Replay only segments at or after `since` — clients pass the next
+      // unheard index when reconnecting (e.g. after asking a question) so
+      // the show doesn't restart from the beginning.
       for (const segment of session.segments) {
         if (abort.aborted) return;
+        if (segment.index < since) continue;
         yield segment;
       }
 
-      while (!abort.aborted && !session.finished) {
-        // A pending question always wins — we interrupt the planned outline
-        // and queue an answer beat next.
-        const pendingQuestion = session.pendingQuestions.shift();
-        if (pendingQuestion) {
-          const beat = buildAnswerBeat(session.topic, pendingQuestion.text);
+      while (!abort.aborted) {
+        // Resolve the next batch of beats in priority order:
+        //   1. Pending listener question → multi-beat answer (interrupts)
+        //   2. Outline next planned beat
+        let beats: PlannedBeat[];
+        if (session.pendingQuestions.length > 0) {
+          const q = session.pendingQuestions.shift()!;
+          // A question revives a wrapped show so the host can address it.
+          session.finished = false;
+          beats = buildAnswerBeats(session.topic, q.text);
+        } else if (session.outlineCursor < session.outline.length) {
+          const beat = session.outline[session.outlineCursor++];
+          if (!beat) continue;
+          beats = [beat];
+        } else {
+          session.finished = true;
+          break;
+        }
+
+        for (const beat of beats) {
+          // A fresh listener question drops any remaining answer beats so the
+          // new question can take over immediately.
+          if (session.pendingQuestions.length > 0) break;
           const newSegments = nextSegmentsForBeat(session, beat);
+          let interrupted = false;
           for (const seg of newSegments) {
             session.segments.push(seg);
             if (abort.aborted) return;
@@ -244,28 +345,12 @@ export function createCastService(): CastService {
             if (abort.aborted) return;
             await pace(abort);
             if (abort.aborted) return;
+            if (session.pendingQuestions.length > 0) {
+              interrupted = true;
+              break;
+            }
           }
-          continue;
-        }
-
-        // Otherwise advance the outline.
-        if (session.outlineCursor >= session.outline.length) {
-          session.finished = true;
-          break;
-        }
-        const beat = session.outline[session.outlineCursor++];
-        if (!beat) {
-          session.finished = true;
-          break;
-        }
-        const newSegments = nextSegmentsForBeat(session, beat);
-        for (const seg of newSegments) {
-          session.segments.push(seg);
-          if (abort.aborted) return;
-          yield seg;
-          if (abort.aborted) return;
-          await pace(abort);
-          if (abort.aborted) return;
+          if (interrupted) break;
         }
       }
     },
