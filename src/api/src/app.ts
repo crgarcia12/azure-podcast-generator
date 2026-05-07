@@ -1,4 +1,4 @@
-import express from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -26,12 +26,32 @@ interface AppDependencies {
 
 const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001'];
 
-function getAllowedOrigins(): string[] {
+function getConfiguredAllowedOrigins(): string[] {
   const configuredOrigins = process.env.ALLOWED_ORIGINS?.split(',')
     .map((origin) => origin.trim())
     .filter(Boolean);
 
   return configuredOrigins?.length ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
+}
+
+// Reconstruct the same-origin URL the browser sees, using the first hop's
+// X-Forwarded-Host / X-Forwarded-Proto headers that the reverse proxy sets.
+// Falls back to the Host header when running locally without a proxy.
+// Returns null when neither is present.
+function getRequestSameOrigin(req: Request): string | null {
+  const forwardedHost = req.headers['x-forwarded-host'];
+  const rawHost =
+    (typeof forwardedHost === 'string' ? forwardedHost : forwardedHost?.[0]) ?? req.headers.host ?? '';
+  const host = String(rawHost).split(',')[0]?.trim();
+  if (!host) {
+    return null;
+  }
+  const forwardedProto = req.headers['x-forwarded-proto'];
+  const rawProto =
+    (typeof forwardedProto === 'string' ? forwardedProto : forwardedProto?.[0]) ??
+    (req.secure ? 'https' : 'http');
+  const proto = String(rawProto).split(',')[0]?.trim().toLowerCase() || 'http';
+  return `${proto}://${host}`;
 }
 
 function seedConfiguredAdminUser(): void {
@@ -57,23 +77,52 @@ export function createApp(dependencies: AppDependencies = {}): express.Express {
   const app = express();
   const podcastService = dependencies.podcastService ?? createPodcastService();
   const interactiveSessionService = dependencies.interactiveSessionService ?? createInteractiveSessionService();
-  const allowedOrigins = new Set(getAllowedOrigins());
+  const configuredAllowedOrigins = new Set(getConfiguredAllowedOrigins());
 
   seedConfiguredAdminUser();
 
   // Middleware
   app.use(helmet());
-  app.use(cors({
-    credentials: true,
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.has(origin)) {
-        callback(null, true);
-        return;
-      }
+  app.use(
+    cors((req, callback) => {
+      const sameOrigin = getRequestSameOrigin(req as Request);
+      callback(null, {
+        credentials: true,
+        origin(origin, originCallback) {
+          // No Origin header (server-to-server, curl) — always allow.
+          if (!origin) {
+            originCallback(null, true);
+            return;
+          }
+          // Explicitly configured allow-list match.
+          if (configuredAllowedOrigins.has(origin)) {
+            originCallback(null, true);
+            return;
+          }
+          // Same-origin request through a reverse proxy: the browser's Origin
+          // matches the URL it used to reach us. This makes the app work behind
+          // any proxy (Liliput, Container Apps, etc.) without per-environment
+          // ALLOWED_ORIGINS config.
+          if (sameOrigin && origin === sameOrigin) {
+            originCallback(null, true);
+            return;
+          }
+          originCallback(new Error(`Origin ${origin} not allowed by CORS`));
+        },
+      });
+    }),
+  );
 
-      callback(new Error('Origin not allowed by CORS'));
-    },
-  }));
+  // Convert CORS rejections from a generic 500 into a clear 403 so callers
+  // get an actionable response instead of an opaque internal error.
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof Error && /not allowed by CORS/i.test(err.message)) {
+      res.status(403).json({ error: err.message });
+      return;
+    }
+    next(err);
+  });
+
   app.use(express.json());
   app.use(cookieParser());
   app.use(pinoHttp({ logger }));

@@ -37,6 +37,19 @@ ENV NODE_ENV=production
 ENV PORT=8080
 ENV BASE_PATH=${BASE_PATH}
 
+# --- Dev-preview defaults (Liliput / single-container only) ---
+# Liliput's deployment does NOT apply our k8s manifests, so any auth-related
+# env vars defined there never reach the running pod. Bake the dev-preview
+# defaults into the image so the app is usable out-of-the-box:
+#   * SEED_ADMIN_*         seed an admin user at boot (admin / admin1234)
+#   * REGISTRATION_ENABLED keep open registration on (set explicitly so the
+#                          runtime default doesn't flip it off because
+#                          SEED_ADMIN_PASSWORD is set).
+# These are PREVIEW credentials only — production deployments override them.
+ENV SEED_ADMIN_USERNAME=admin
+ENV SEED_ADMIN_PASSWORD=admin1234
+ENV REGISTRATION_ENABLED=true
+
 WORKDIR /app
 
 # API artifacts
