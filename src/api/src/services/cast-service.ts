@@ -24,6 +24,7 @@ interface QueuedQuestion {
 export interface CastSession {
   id: string;
   topic: string;
+  style: string; // user-provided "vibe" hint — empty string when not supplied
   createdAt: string;
   segments: CastSegment[];
   outline: PlannedBeat[];
@@ -35,15 +36,32 @@ export interface CastSession {
   signal: { promise: Promise<void>; resolve: () => void };
 }
 
+export interface CastMeta {
+  id: string;
+  topic: string;
+  style: string;
+  createdAt: string;
+  provider: string;
+  modelDisplayName: string;
+  // The full instruction string PodCraft would send to an LLM if one were
+  // configured. Surfacing this gives listeners full transparency into what's
+  // shaping the conversation and lets them iterate on the style.
+  systemPrompt: string;
+}
+
 const MIN_TOPIC_LENGTH = 2;
 const MAX_TOPIC_LENGTH = 200;
 const MIN_QUESTION_LENGTH = 1;
 const MAX_QUESTION_LENGTH = 400;
+const MAX_STYLE_LENGTH = 500;
 
 // Mid-segment pacing — gives the browser time to actually speak each segment
 // before the next one queues up, and lets a listener interrupt naturally
 // between beats. Tunable via env for tests.
 const SEGMENT_PACE_MS = Number(process.env.CAST_SEGMENT_PACE_MS ?? '2500');
+
+const PROVIDER_NAME = 'mock-template';
+const MODEL_DISPLAY_NAME = 'PodCraft mock outline v2';
 
 export class CastValidationError extends Error {
   constructor(message: string) {
@@ -95,15 +113,107 @@ function trimQuestion(raw: unknown): string {
   return trimmed;
 }
 
+function trimStyle(raw: unknown): string {
+  // Style is optional — empty/missing is fine and just means "use defaults".
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') {
+    throw new CastValidationError('Style must be a string');
+  }
+  const trimmed = raw.trim().replace(/\s+/g, ' ');
+  if (trimmed.length > MAX_STYLE_LENGTH) {
+    throw new CastValidationError(`Style must be at most ${MAX_STYLE_LENGTH} characters`);
+  }
+  return trimmed;
+}
+
+// Build the would-be LLM system prompt — surfaced via /api/cast/:id/meta so
+// listeners can see exactly what's shaping the conversation. The mock provider
+// doesn't actually call an LLM today; this string is the instruction we'd send
+// if one were configured.
+export function buildSystemPrompt(topic: string, style: string): string {
+  const stylePart = style
+    ? ` The host has asked for the following vibe: "${style}". Honour that vibe in pacing, vocabulary, and the angles you choose.`
+    : '';
+  return [
+    `You are scripting a two-person interview podcast about "${topic}".`,
+    `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
+    `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
+    `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
+    `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
+    `Keep lines drivable — no jargon dumps, no filler.${stylePart}`,
+  ].join(' ');
+}
+
+// Lightweight style fingerprint — a few buckets that shape templated phrasing
+// without an LLM. The user's literal style string is also threaded into a few
+// host lines so they can hear it took effect.
+type StyleBucket = 'punchy' | 'cozy' | 'comedic' | 'analytical' | 'spicy' | 'storyteller' | 'default';
+
+function classifyStyle(style: string): StyleBucket {
+  if (!style) return 'default';
+  const s = style.toLowerCase();
+  if (/(punchy|fast|energetic|hype|pump|tight|snappy|short)/.test(s)) return 'punchy';
+  if (/(cozy|calm|sleepy|bedtime|chill|mellow|gentle|relax)/.test(s)) return 'cozy';
+  if (/(funny|comedy|comedic|joke|witty|playful|absurd|sarcas)/.test(s)) return 'comedic';
+  if (/(analytical|deep|dense|technical|nerdy|rigorous|expert)/.test(s)) return 'analytical';
+  if (/(spicy|contrarian|hot.?take|provoc|edgy|controv)/.test(s)) return 'spicy';
+  if (/(story|narrative|cinematic|dramatic|epic)/.test(s)) return 'storyteller';
+  return 'default';
+}
+
+function styleFlavor(bucket: StyleBucket, style: string): { intro: string; closer: string } {
+  switch (bucket) {
+    case 'punchy':
+      return {
+        intro: ` Quick warning: today is fast and tight. No fluff, just the good stuff.`,
+        closer: ` That's the punchy version — onto the next.`,
+      };
+    case 'cozy':
+      return {
+        intro: ` Settle in — this one's a slower, gentler ride.`,
+        closer: ` Take a breath, we'll keep ambling forward.`,
+      };
+    case 'comedic':
+      return {
+        intro: ` Heads up: we're going to enjoy ourselves with this one.`,
+        closer: ` (Yes, that was a setup. Moving on.)`,
+      };
+    case 'analytical':
+      return {
+        intro: ` We're going deep on this one — bring your thinking cap.`,
+        closer: ` Filing that under "things worth a second pass" — onward.`,
+      };
+    case 'spicy':
+      return {
+        intro: ` Fair warning: we've got some hot takes loaded for this one.`,
+        closer: ` Yes, that'll annoy somebody. Good. Onward.`,
+      };
+    case 'storyteller':
+      return {
+        intro: ` We're telling this one as a story — characters, stakes, the whole arc.`,
+        closer: ` And the next chapter is where it gets really interesting.`,
+      };
+    default:
+      return style
+        ? {
+            intro: ` The vibe today, per the request: ${style}.`,
+            closer: ``,
+          }
+        : { intro: '', closer: '' };
+  }
+}
+
 // Templated outline. The mock provider is intentionally simple but produces
-// more than enough material for an in-car listen — ~10 beats × 2 lines.
-function buildOutline(topic: string): PlannedBeat[] {
+// more than enough material for an in-car listen — ~11 beats × 2 lines.
+function buildOutline(topic: string, style: string): PlannedBeat[] {
   const t = topic;
   const T = topic.charAt(0).toUpperCase() + topic.slice(1);
+  const bucket = classifyStyle(style);
+  const flavor = styleFlavor(bucket, style);
 
   return [
     {
-      hostLine: `Welcome back to the show. Today's episode is all about ${t}, and I think this one's going to be a great drive companion.`,
+      hostLine: `Welcome back to the show. Today's episode is all about ${t}, and I think this one's going to be a great drive companion.${flavor.intro}`,
       guestLine: `Thanks for having me. ${T} is one of those topics where the more you peel back the layers, the more interesting it gets.`,
     },
     {
@@ -143,7 +253,7 @@ function buildOutline(topic: string): PlannedBeat[] {
       guestLine: `Don't accept the headline version. ${T} is a story about decisions, trade-offs, and long-term consequences — and that's exactly what makes it worth your attention.`,
     },
     {
-      hostLine: `Beautifully put. Thanks so much for joining us today — that was a fantastic deep-dive on ${t}.`,
+      hostLine: `Beautifully put. Thanks so much for joining us today — that was a fantastic deep-dive on ${t}.${flavor.closer}`,
       guestLine: `My pleasure. Thanks for having me, and safe travels to everyone listening.`,
     },
   ];
@@ -160,10 +270,29 @@ function classifyQuestion(lower: string): 'why' | 'how' | 'what' | 'when' | 'who
   return 'open';
 }
 
-function buildAnswerBeats(topic: string, question: string): PlannedBeat[] {
+function buildAnswerBeats(topic: string, question: string, style: string): PlannedBeat[] {
   const trimmed = question.replace(/[?.!]+$/, '').trim();
   const lower = trimmed.toLowerCase();
   const kind = classifyQuestion(lower);
+  const styleBucket = classifyStyle(style);
+  const styleAside = (() => {
+    switch (styleBucket) {
+      case 'punchy':
+        return ` Quick version, no fluff.`;
+      case 'cozy':
+        return ` Let's take it slowly.`;
+      case 'comedic':
+        return ` And I promise to keep this entertaining.`;
+      case 'analytical':
+        return ` We'll be precise about this.`;
+      case 'spicy':
+        return ` Buckle up — there's a real take coming.`;
+      case 'storyteller':
+        return ` Picture the scene with me.`;
+      default:
+        return ``;
+    }
+  })();
 
   const setupGuest = (() => {
     switch (kind) {
@@ -209,7 +338,7 @@ function buildAnswerBeats(topic: string, question: string): PlannedBeat[] {
 
   return [
     {
-      hostLine: `Hold on — we just got a great question from a listener. They're asking: "${trimmed}". Let's pause the thread and dig into that.`,
+      hostLine: `Hold on — we just got a great question from a listener. They're asking: "${trimmed}". Let's pause the thread and dig into that.${styleAside}`,
       guestLine: setupGuest,
     },
     {
@@ -227,9 +356,14 @@ function buildAnswerBeats(topic: string, question: string): PlannedBeat[] {
   ];
 }
 
+export interface StartSessionOptions {
+  style?: string;
+}
+
 export interface CastService {
-  startSession(topic: string): CastSession;
+  startSession(topic: string, options?: StartSessionOptions): CastSession;
   getSession(id: string): CastSession | undefined;
+  getMeta(id: string): CastMeta | undefined;
   addQuestion(id: string, question: string): { questionId: string };
   // Async generator that yields one segment at a time, awaiting between
   // segments to emulate natural pacing and to give listeners time to ask.
@@ -261,14 +395,16 @@ export function createCastService(): CastService {
   }
 
   return {
-    startSession(rawTopic: string): CastSession {
+    startSession(rawTopic: string, options: StartSessionOptions = {}): CastSession {
       const topic = trimTopic(rawTopic);
+      const style = trimStyle(options.style);
       const session: CastSession = {
         id: randomUUID(),
         topic,
+        style,
         createdAt: new Date().toISOString(),
         segments: [],
-        outline: buildOutline(topic),
+        outline: buildOutline(topic, style),
         outlineCursor: 0,
         pendingQuestions: [],
         finished: false,
@@ -280,6 +416,20 @@ export function createCastService(): CastService {
 
     getSession(id: string): CastSession | undefined {
       return sessions.get(id);
+    },
+
+    getMeta(id: string): CastMeta | undefined {
+      const session = sessions.get(id);
+      if (!session) return undefined;
+      return {
+        id: session.id,
+        topic: session.topic,
+        style: session.style,
+        createdAt: session.createdAt,
+        provider: PROVIDER_NAME,
+        modelDisplayName: MODEL_DISPLAY_NAME,
+        systemPrompt: buildSystemPrompt(session.topic, session.style),
+      };
     },
 
     addQuestion(id: string, rawQuestion: string): { questionId: string } {
@@ -322,7 +472,7 @@ export function createCastService(): CastService {
           const q = session.pendingQuestions.shift()!;
           // A question revives a wrapped show so the host can address it.
           session.finished = false;
-          beats = buildAnswerBeats(session.topic, q.text);
+          beats = buildAnswerBeats(session.topic, q.text, session.style);
         } else if (session.outlineCursor < session.outline.length) {
           const beat = session.outline[session.outlineCursor++];
           if (!beat) continue;
@@ -366,4 +516,4 @@ async function pace(abort: AbortSignal): Promise<void> {
   }
 }
 
-export const __testing = { trimTopic, trimQuestion };
+export const __testing = { trimTopic, trimQuestion, trimStyle, classifyStyle };

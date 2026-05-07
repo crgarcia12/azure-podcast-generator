@@ -10,12 +10,19 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
   // Create a new cast session for a topic. Anonymous — no auth required.
   app.post('/api/cast', (req: Request, res: Response) => {
     try {
-      const { topic } = (req.body ?? {}) as { topic?: unknown };
-      const session = service.startSession(typeof topic === 'string' ? topic : '');
+      const { topic, style } = (req.body ?? {}) as { topic?: unknown; style?: unknown };
+      const session = service.startSession(typeof topic === 'string' ? topic : '', {
+        style: typeof style === 'string' ? style : undefined,
+      });
+      const meta = service.getMeta(session.id);
       res.status(201).json({
         id: session.id,
         topic: session.topic,
+        style: session.style,
         createdAt: session.createdAt,
+        provider: meta?.provider,
+        modelDisplayName: meta?.modelDisplayName,
+        systemPrompt: meta?.systemPrompt,
       });
     } catch (err) {
       if (err instanceof CastValidationError) {
@@ -25,6 +32,19 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
       logger.error({ err }, 'Failed to start cast session');
       res.status(500).json({ error: 'Failed to start cast session' });
     }
+  });
+
+  // Inspect the metadata for a session — including the would-be LLM system
+  // prompt. Surfaced for transparency: the user asked "what prompt and model
+  // are you using" and they deserve a real answer they can read.
+  app.get('/api/cast/:id/meta', (req: Request, res: Response) => {
+    const sessionId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const meta = service.getMeta(sessionId);
+    if (!meta) {
+      res.status(404).json({ error: 'Cast session not found' });
+      return;
+    }
+    res.status(200).json(meta);
   });
 
   // SSE — server-sent events stream of cast segments. Each event:

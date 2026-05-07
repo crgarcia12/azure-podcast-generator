@@ -69,6 +69,56 @@ describe('cast endpoints', () => {
       expect(res.status).toBe(201);
       expect(res.body.topic).toBe('formula one racing');
     });
+
+    it('accepts a custom style and threads it into the system prompt', async () => {
+      const app = createApp();
+      const res = await request(app)
+        .post('/api/cast')
+        .send({ topic: 'rome', style: 'punchy and contrarian' });
+      expect(res.status).toBe(201);
+      expect(res.body.style).toBe('punchy and contrarian');
+      expect(res.body.provider).toBe('mock-template');
+      expect(res.body.modelDisplayName).toMatch(/PodCraft/i);
+      expect(res.body.systemPrompt).toContain('rome');
+      expect(res.body.systemPrompt).toContain('punchy and contrarian');
+    });
+
+    it('rejects style longer than 500 chars with 400', async () => {
+      const app = createApp();
+      const longStyle = 'x'.repeat(501);
+      const res = await request(app)
+        .post('/api/cast')
+        .send({ topic: 'rome', style: longStyle });
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('GET /api/cast/:id/meta', () => {
+    it('returns the would-be system prompt and provider info', async () => {
+      const app = createApp();
+      const create = await request(app)
+        .post('/api/cast')
+        .send({ topic: 'jazz history', style: 'sleepy bedtime story' });
+      const sessionId = create.body.id as string;
+
+      const res = await request(app).get(`/api/cast/${sessionId}/meta`);
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({
+        id: sessionId,
+        topic: 'jazz history',
+        style: 'sleepy bedtime story',
+        provider: 'mock-template',
+        modelDisplayName: expect.stringMatching(/PodCraft/i),
+        systemPrompt: expect.stringContaining('jazz history'),
+      });
+      expect(res.body.systemPrompt).toContain('sleepy bedtime story');
+    });
+
+    it('returns 404 for unknown session id', async () => {
+      const app = createApp();
+      const res = await request(app).get('/api/cast/00000000-0000-0000-0000-000000000000/meta');
+      expect(res.status).toBe(404);
+    });
   });
 
   describe('GET /api/cast/:id/stream', () => {
