@@ -1,25 +1,22 @@
-FROM node:20-alpine AS base
+FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS deps
 WORKDIR /app
-
-FROM base AS deps
-RUN apk add --no-cache python3 make g++
-COPY package.json package-lock.json* ./
+COPY src/api/package.json src/api/package-lock.json* ./
 RUN npm ci --omit=dev
 
-FROM base AS build
-RUN apk add --no-cache python3 make g++
-COPY package.json package-lock.json* ./
+FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS build
+WORKDIR /app
+COPY src/api/package.json src/api/package-lock.json* ./
 RUN npm ci
-COPY tsconfig.json ./
-COPY src/ ./src/
+COPY src/api/tsconfig.json ./
+COPY src/api/src/ ./src/
 RUN npm run build
 
-FROM base AS runner
-RUN apk add --no-cache libstdc++
+FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS runner
+WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
-COPY package.json ./
+COPY src/api/package.json ./
 EXPOSE 8080
 ENV PORT=8080
 CMD ["node", "dist/index.js"]
