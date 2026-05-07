@@ -58,11 +58,11 @@ COPY --from=api-build /api/node_modules ./api/node_modules
 COPY --from=api-build /api/package.json ./api/package.json
 
 # Next.js standalone bundle.
-# Because the repo has a top-level package-lock.json, Next.js treats the
-# repo root as the workspace root and emits the standalone bundle nested
-# under the relative project path: .next/standalone/src/web/*. We flatten
-# that here so the launcher just sees /app/web/server.js.
-COPY --from=web-build /web/.next/standalone/src/web/ ./web/
+# The web-build stage only copies src/web/ into /web (no parent package.json
+# or lockfile), so Next.js treats /web as the workspace root and emits the
+# standalone bundle flat at /web/.next/standalone/server.js. Copy that
+# directly so the launcher sees /app/web/server.js.
+COPY --from=web-build /web/.next/standalone/ ./web/
 COPY --from=web-build /web/.next/static ./web/.next/static
 COPY --from=web-build /web/public ./web/public
 
