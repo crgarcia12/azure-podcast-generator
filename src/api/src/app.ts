@@ -12,16 +12,19 @@ import { mapAuthEndpoints } from './routes/auth.js';
 import { mapAdminEndpoints } from './routes/admin.js';
 import { mapPodcastEndpoints } from './routes/podcasts.js';
 import { mapSessionEndpoints } from './routes/sessions.js';
+import { mapCastEndpoints } from './routes/cast.js';
 import { clearUsers, addUser, getUserByUsername, deleteUser } from './models/user-store.js';
 import { clearPodcastEpisodes } from './models/podcast-store.js';
 import { clearSessions } from './models/session-store.js';
 import { createPodcastService, type PodcastService } from './services/podcast-service.js';
 import { createInteractiveSessionService, type InteractiveSessionService } from './services/interactive-session-service.js';
+import { createCastService, type CastService } from './services/cast-service.js';
 import { applyRuntimeDefaults } from './config/runtime-defaults.js';
 
 interface AppDependencies {
   podcastService?: PodcastService;
   interactiveSessionService?: InteractiveSessionService;
+  castService?: CastService;
 }
 
 const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001'];
@@ -77,6 +80,7 @@ export function createApp(dependencies: AppDependencies = {}): express.Express {
   const app = express();
   const podcastService = dependencies.podcastService ?? createPodcastService();
   const interactiveSessionService = dependencies.interactiveSessionService ?? createInteractiveSessionService();
+  const castService = dependencies.castService ?? createCastService();
   const configuredAllowedOrigins = new Set(getConfiguredAllowedOrigins());
 
   seedConfiguredAdminUser();
@@ -134,6 +138,7 @@ export function createApp(dependencies: AppDependencies = {}): express.Express {
   mapAdminEndpoints(app);
   mapPodcastEndpoints(app, podcastService);
   mapSessionEndpoints(app, interactiveSessionService);
+  mapCastEndpoints(app, castService);
 
   // Test-only: reset endpoint for e2e test isolation
   if (process.env.NODE_ENV !== 'production') {

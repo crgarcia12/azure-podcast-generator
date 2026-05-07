@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import NavBar from "./components/NavBar";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,8 +13,10 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "PodCraft — AI Podcast Generator",
-  description: "Turn any topic into an engaging interview-style podcast episode with AI-generated scripts and natural speech synthesis.",
+  title: "PodCraft — Pick a topic, hit play",
+  description: "An in-car podcast player. Type a topic, press Go, and an AI host and guest start an interview-style conversation immediately. Tap Ask to interrupt with a question.",
+  themeColor: "#050510",
+  viewport: "width=device-width, initial-scale=1, viewport-fit=cover",
 };
 
 export default function RootLayout({
@@ -27,7 +28,6 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <script dangerouslySetInnerHTML={{ __html: `
-          // Remove Next.js route announcer custom element to prevent aria-live conflicts
           (function() {
             function fix() {
               var els = document.getElementsByTagName('next-route-announcer');
@@ -43,7 +43,6 @@ export default function RootLayout({
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
-        <NavBar />
         {children}
       </body>
     </html>
