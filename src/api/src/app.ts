@@ -17,6 +17,7 @@ import { clearPodcastEpisodes } from './models/podcast-store.js';
 import { clearSessions } from './models/session-store.js';
 import { createPodcastService, type PodcastService } from './services/podcast-service.js';
 import { createInteractiveSessionService, type InteractiveSessionService } from './services/interactive-session-service.js';
+import { applyRuntimeDefaults } from './config/runtime-defaults.js';
 
 interface AppDependencies {
   podcastService?: PodcastService;
@@ -51,6 +52,8 @@ function seedConfiguredAdminUser(): void {
 }
 
 export function createApp(dependencies: AppDependencies = {}): express.Express {
+  applyRuntimeDefaults();
+
   const app = express();
   const podcastService = dependencies.podcastService ?? createPodcastService();
   const interactiveSessionService = dependencies.interactiveSessionService ?? createInteractiveSessionService();
