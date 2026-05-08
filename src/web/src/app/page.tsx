@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiFetch, toApiUrl } from './lib/api';
+import { useSpeechRecognition } from './lib/use-speech-recognition';
 
 type Speaker = 'host' | 'guest';
 
@@ -142,6 +143,11 @@ export default function Home() {
   // Playback speed multiplier — applied on top of the per-speaker rate.
   // Restored from localStorage so the listener's preference sticks.
   const [speed, setSpeed] = useState<number>(SPEED_PRESETS[DEFAULT_SPEED_INDEX]);
+
+  // Internal sub-mode of the asking phase: 'voice' uses the microphone,
+  // 'text' uses the typed-input fallback. Default to voice when supported,
+  // and let the listener flip to text from the asking screen.
+  const [askMode, setAskMode] = useState<'voice' | 'text'>('voice');
 
   const queueRef = useRef<CastSegment[]>([]);
   const speakingRef = useRef<boolean>(false);
@@ -453,7 +459,7 @@ export default function Home() {
 
   const handleAskOpen = useCallback(() => {
     if (!sessionId) return;
-    // Stop the show while the listener is typing — but DON'T close the stream
+    // Stop the show while the listener is asking — but DON'T close the stream
     // here. The server is still emitting outline beats; we just suppress
     // playback. When the question lands the server will swap to answer beats
     // and we'll resume audio with those.
@@ -461,10 +467,21 @@ export default function Home() {
     queueRef.current = [];
     setCurrentSegment(null);
     setQuestionInput('');
+    // Default to voice mode when the browser supports it. The asking screen
+    // still offers a "type instead" toggle for fallback.
+    setAskMode(speechRecognitionSupportedRef.current ? 'voice' : 'text');
     setPhase('asking');
   }, [cancelSpeech, sessionId]);
 
+  // Ref so the closure above can read the latest support flag without
+  // depending on it (avoids a re-render churn).
+  const speechRecognitionSupportedRef = useRef(false);
+  // Ref to abort()-on-cancel without re-creating the cancel callback every
+  // time the speech hook re-renders.
+  const speechAbortRef = useRef<(() => void) | null>(null);
+
   const handleAskCancel = useCallback(() => {
+    speechAbortRef.current?.();
     setQuestionInput('');
     setPhase('playing');
     // If the stream had already wrapped (event: done), reopen from where we
@@ -475,10 +492,12 @@ export default function Home() {
     }
   }, [openStream, sessionId]);
 
-  const handleAskSubmit = useCallback(
-    async (e: FormEvent) => {
-      e.preventDefault();
-      const q = questionInput.trim();
+  // Submit a question to the API. Accepts an explicit string so the voice
+  // flow can call it directly with the recognised transcript without going
+  // through React state. Falls back to whatever's currently in `questionInput`.
+  const submitQuestion = useCallback(
+    async (rawQuestion: string) => {
+      const q = rawQuestion.trim();
       if (!q || !sessionId) return;
       try {
         const res = await apiFetch(`/api/cast/${encodeURIComponent(sessionId)}/question`, {
@@ -511,8 +530,67 @@ export default function Home() {
         setPhase('error');
       }
     },
-    [cancelSpeech, openStream, questionInput, sessionId],
+    [cancelSpeech, openStream, sessionId],
   );
+
+  const handleAskSubmit = useCallback(
+    async (e: FormEvent) => {
+      e.preventDefault();
+      await submitQuestion(questionInput);
+    },
+    [questionInput, submitQuestion],
+  );
+
+  // Wire the SpeechRecognition hook. Auto-submit on natural end-of-speech so
+  // a driver can ask without ever taking their hands off the wheel.
+  const speech = useSpeechRecognition({
+    continuous: false,
+    onFinalResult: (transcript) => {
+      const q = transcript.trim();
+      if (!q) return;
+      // Mirror into the input so cancel/keyboard fallback still work, then
+      // auto-submit. The submit clears the input and switches phase.
+      setQuestionInput(q);
+      void submitQuestion(q);
+    },
+  });
+  // Cache the support flag + abort fn into refs the open/cancel handlers can
+  // see without taking a dependency on the hook (which re-renders often).
+  useEffect(() => {
+    speechRecognitionSupportedRef.current = speech.isSupported;
+  }, [speech.isSupported]);
+  useEffect(() => {
+    speechAbortRef.current = speech.abort;
+  }, [speech.abort]);
+
+  // Auto-start mic when entering voice mode of the asking phase. Auto-stop
+  // when leaving the asking phase so the mic doesn't keep listening.
+  useEffect(() => {
+    if (phase === 'asking' && askMode === 'voice' && speech.isSupported) {
+      speech.start();
+    }
+    if (phase !== 'asking') {
+      // Defensive: any prior listening session should be cancelled.
+      if (speech.status === 'listening' || speech.status === 'starting') {
+        speech.abort();
+      }
+    }
+    // We intentionally do not depend on `speech` itself — that would loop
+    // because the hook returns new function refs on every render. Watch only
+    // the values that should re-trigger start/stop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phase, askMode, speech.isSupported]);
+
+  const switchToTextMode = useCallback(() => {
+    speech.abort();
+    setAskMode('text');
+  }, [speech]);
+
+  const restartListening = useCallback(() => {
+    speech.reset();
+    speech.start();
+  }, [speech]);
+
 
   const speakerLabel = currentSegment
     ? currentSegment.speaker === 'host'
@@ -652,7 +730,7 @@ export default function Home() {
               type="button"
               onClick={handleAskOpen}
               className="flex h-32 w-32 items-center justify-center rounded-full bg-gradient-to-br from-fuchsia-500 to-orange-400 text-2xl font-extrabold uppercase tracking-widest text-white shadow-[0_20px_60px_-20px_rgba(244,114,182,0.7)] transition active:scale-95"
-              aria-label="Interrupt and ask a question"
+              aria-label="Interrupt the show and ask a question by voice"
             >
               Ask
             </button>
@@ -710,33 +788,152 @@ export default function Home() {
               <p className="text-sm uppercase tracking-[0.3em] text-white/50">Your question</p>
               <h2 className="mt-2 text-3xl font-bold sm:text-4xl">{topic}</h2>
             </div>
-            <form onSubmit={handleAskSubmit} className="flex w-full max-w-2xl flex-col items-center gap-4">
-              <input
-                autoFocus
-                value={questionInput}
-                onChange={(e) => setQuestionInput(e.target.value)}
-                placeholder="Type your question"
-                className="w-full rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center text-xl font-medium text-white placeholder-white/40 outline-none focus:border-white/40 focus:bg-white/15"
-                maxLength={500}
-                aria-label="Your question"
-              />
-              <div className="flex gap-3">
-                <button
-                  type="button"
-                  onClick={handleAskCancel}
-                  className="rounded-full border border-white/30 px-8 py-4 text-lg font-semibold text-white/80 transition hover:bg-white/10"
+
+            {askMode === 'voice' ? (
+              // Voice-first hands-free flow. The mic auto-starts when the
+              // asking phase opens and auto-submits on natural end-of-speech,
+              // so a driver never has to look at the screen.
+              <div className="flex w-full max-w-2xl flex-col items-center gap-6">
+                <div
+                  className={`relative flex h-44 w-44 items-center justify-center rounded-full border-4 transition ${
+                    speech.status === 'listening'
+                      ? 'border-fuchsia-300/80 bg-gradient-to-br from-fuchsia-500/30 to-orange-400/30'
+                      : speech.status === 'starting'
+                        ? 'border-white/30 bg-white/5'
+                        : speech.status === 'error'
+                          ? 'border-rose-400/70 bg-rose-500/10'
+                          : 'border-white/20 bg-white/5'
+                  }`}
+                  aria-live="polite"
+                  role="status"
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!questionInput.trim()}
-                  className="rounded-full bg-white px-10 py-4 text-lg font-bold text-black transition disabled:opacity-50 active:scale-95"
-                >
-                  Send
-                </button>
+                  {speech.status === 'listening' ? (
+                    <span className="pointer-events-none absolute inset-0 animate-ping rounded-full border-2 border-fuchsia-300/50" />
+                  ) : null}
+                  <svg
+                    aria-hidden="true"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.6"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className="h-20 w-20 text-white/90"
+                  >
+                    <path d="M12 1.5a3.5 3.5 0 0 0-3.5 3.5v6a3.5 3.5 0 1 0 7 0V5A3.5 3.5 0 0 0 12 1.5Z" />
+                    <path d="M5 11a7 7 0 0 0 14 0" />
+                    <path d="M12 18v3.5" />
+                    <path d="M8.5 21.5h7" />
+                  </svg>
+                </div>
+
+                <div className="min-h-[5rem] w-full max-w-2xl text-center">
+                  <p className="text-sm uppercase tracking-[0.3em] text-white/40">
+                    {speech.status === 'listening'
+                      ? 'Listening…'
+                      : speech.status === 'starting'
+                        ? 'Starting microphone…'
+                        : speech.status === 'stopped'
+                          ? 'Sending…'
+                          : speech.status === 'error'
+                            ? 'Microphone error'
+                            : 'Ready'}
+                  </p>
+                  <p className="mt-2 text-xl font-medium text-white/90 sm:text-2xl">
+                    {speech.finalTranscript || speech.interimTranscript || (
+                      <span className="italic text-white/40">
+                        {speech.status === 'listening'
+                          ? 'Say your question, I\u2019m listening.'
+                          : 'Tap the mic to speak.'}
+                      </span>
+                    )}
+                  </p>
+                  {speech.error ? (
+                    <p className="mt-3 text-sm text-rose-300">{speech.error}</p>
+                  ) : null}
+                </div>
+
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAskCancel}
+                    className="rounded-full border border-white/30 px-6 py-4 text-base font-semibold text-white/80 transition hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  {speech.status === 'listening' ? (
+                    <button
+                      type="button"
+                      onClick={() => speech.stop()}
+                      className="rounded-full bg-white px-10 py-4 text-base font-bold text-black transition active:scale-95"
+                      aria-label="Stop and send your question"
+                    >
+                      Send
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={restartListening}
+                      className="rounded-full bg-gradient-to-br from-fuchsia-500 to-orange-400 px-8 py-4 text-base font-bold text-white transition active:scale-95"
+                    >
+                      {speech.finalTranscript ? 'Re-record' : 'Start mic'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={switchToTextMode}
+                    className="text-xs uppercase tracking-[0.25em] text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
+                  >
+                    Type instead
+                  </button>
+                </div>
+                {!speech.isSupported ? (
+                  <p className="text-xs text-amber-200/80">
+                    Voice input isn\u2019t supported in this browser. Use Type instead.
+                  </p>
+                ) : null}
               </div>
-            </form>
+            ) : (
+              <form onSubmit={handleAskSubmit} className="flex w-full max-w-2xl flex-col items-center gap-4">
+                <input
+                  autoFocus
+                  value={questionInput}
+                  onChange={(e) => setQuestionInput(e.target.value)}
+                  placeholder="Type your question"
+                  className="w-full rounded-2xl border border-white/15 bg-white/10 px-6 py-5 text-center text-xl font-medium text-white placeholder-white/40 outline-none focus:border-white/40 focus:bg-white/15"
+                  maxLength={500}
+                  aria-label="Your question"
+                />
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleAskCancel}
+                    className="rounded-full border border-white/30 px-8 py-4 text-lg font-semibold text-white/80 transition hover:bg-white/10"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={!questionInput.trim()}
+                    className="rounded-full bg-white px-10 py-4 text-lg font-bold text-black transition disabled:opacity-50 active:scale-95"
+                  >
+                    Send
+                  </button>
+                  {speech.isSupported ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuestionInput('');
+                        setAskMode('voice');
+                      }}
+                      className="text-xs uppercase tracking-[0.25em] text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
+                    >
+                      Use mic instead
+                    </button>
+                  ) : null}
+                </div>
+              </form>
+            )}
           </section>
         ) : null}
 
