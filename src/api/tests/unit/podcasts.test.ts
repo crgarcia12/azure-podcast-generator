@@ -61,6 +61,15 @@ function createFakePodcastService(
       const episode = episodes.get(episodeId);
       return episode && episode.ownerId === ownerId ? episode : null;
     },
+    async listEpisodes({ ownerId }) {
+      return Array.from(episodes.values()).filter((ep) => ep.ownerId === ownerId);
+    },
+    async generateSteeredSegment() {
+      throw new Error('not implemented in fake');
+    },
+    async getSteeredSegment() {
+      return null;
+    },
   };
 }
 

@@ -4,14 +4,23 @@ import {
   PODCAST_TOPIC_MAX_LENGTH,
   PodcastConfigurationError,
   PodcastDependencyError,
+  PodcastEpisodeNotFoundError,
+  QUESTION_MAX_LENGTH,
+  QUESTION_MIN_LENGTH,
   type PodcastEpisodeDraft,
   type PodcastService,
   type StoredPodcastEpisode,
+  type StoredSteeredSegment,
 } from '../services/podcast-service.js';
 import { logger } from '../logger.js';
 
 interface CreatePodcastBody {
   topic?: unknown;
+}
+
+interface AskQuestionBody {
+  question?: unknown;
+  playbackPositionSeconds?: unknown;
 }
 
 interface PodcastEpisodeResponse {
@@ -29,6 +38,23 @@ interface PodcastEpisodeResponse {
   audioAvailable: boolean;
   audioUrl: string | null;
   audioContentType: string | null;
+}
+
+interface SteeredSegmentResponse {
+  segmentId: string;
+  episodeId: string;
+  question: string;
+  playbackPositionSeconds: number;
+  durationSeconds: number;
+  transcript: Array<{
+    id: string;
+    speaker: 'host' | 'guest';
+    speakerLabel: 'Host' | 'Guest';
+    text: string;
+  }>;
+  audioUrl: string;
+  audioContentType: string;
+  createdAt: string;
 }
 
 export function mapPodcastEndpoints(app: Express, podcastService: PodcastService): void {
@@ -117,6 +143,95 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
     res.setHeader('Content-Length', episode.audioBuffer.length.toString());
     res.send(episode.audioBuffer);
   });
+
+  app.post('/api/podcasts/:episodeId/questions', authMiddleware, async (req, res) => {
+    const episodeId = Array.isArray(req.params.episodeId)
+      ? req.params.episodeId[0]
+      : req.params.episodeId;
+
+    if (!episodeId) {
+      res.status(404).json({ error: 'Podcast not found' });
+      return;
+    }
+
+    const parsed = parseAskQuestion(req.body as AskQuestionBody);
+    if (!parsed) {
+      res.status(400).json({
+        error: `Question must be between ${QUESTION_MIN_LENGTH} and ${QUESTION_MAX_LENGTH} characters`,
+      });
+      return;
+    }
+
+    try {
+      const segment = await podcastService.generateSteeredSegment({
+        ownerId: req.user!.sub,
+        episodeId,
+        question: parsed.question,
+        playbackPositionSeconds: parsed.playbackPositionSeconds,
+      });
+
+      res.status(200).json({
+        segment: toSegmentResponse(segment),
+      });
+    } catch (error) {
+      if (error instanceof PodcastEpisodeNotFoundError) {
+        res.status(404).json({ error: 'Podcast not found' });
+        return;
+      }
+
+      if (error instanceof PodcastConfigurationError) {
+        logger.warn({ userId: req.user?.sub }, error.message);
+        res.status(503).json({ error: error.message });
+        return;
+      }
+
+      if (error instanceof PodcastDependencyError) {
+        logger.error(
+          { err: error, episodeId, userId: req.user?.sub },
+          'Steered segment generation failed',
+        );
+        res.status(502).json({ error: error.message });
+        return;
+      }
+
+      logger.error({ err: error, episodeId, userId: req.user?.sub }, 'Steered segment failed');
+      res.status(500).json({ error: 'Unable to answer the listener question right now' });
+    }
+  });
+
+  app.get(
+    '/api/podcasts/:episodeId/segments/:segmentId/audio',
+    authMiddleware,
+    async (req, res) => {
+      const episodeId = Array.isArray(req.params.episodeId)
+        ? req.params.episodeId[0]
+        : req.params.episodeId;
+      const segmentId = Array.isArray(req.params.segmentId)
+        ? req.params.segmentId[0]
+        : req.params.segmentId;
+
+      if (!episodeId || !segmentId) {
+        res.status(404).json({ error: 'Segment not found' });
+        return;
+      }
+
+      const segment = await podcastService.getSteeredSegment({
+        ownerId: req.user!.sub,
+        episodeId,
+        segmentId,
+      });
+
+      if (!segment) {
+        res.status(404).json({ error: 'Segment not found' });
+        return;
+      }
+
+      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Content-Type', segment.audioContentType);
+      res.setHeader('Content-Length', segment.audioBuffer.length.toString());
+      res.send(segment.audioBuffer);
+    },
+  );
 }
 
 function parseTopic(body: CreatePodcastBody): string | null {
@@ -126,6 +241,51 @@ function parseTopic(body: CreatePodcastBody): string | null {
 
   const topic = body.topic.trim();
   return topic.length > 0 ? topic : null;
+}
+
+function parseAskQuestion(
+  body: AskQuestionBody,
+): { question: string; playbackPositionSeconds: number } | null {
+  if (typeof body.question !== 'string') {
+    return null;
+  }
+
+  const question = body.question.trim();
+  if (question.length < QUESTION_MIN_LENGTH || question.length > QUESTION_MAX_LENGTH) {
+    return null;
+  }
+
+  const positionRaw = body.playbackPositionSeconds;
+  const playbackPositionSeconds = typeof positionRaw === 'number'
+    ? positionRaw
+    : typeof positionRaw === 'string'
+      ? Number.parseFloat(positionRaw)
+      : 0;
+
+  if (!Number.isFinite(playbackPositionSeconds) || playbackPositionSeconds < 0) {
+    return null;
+  }
+
+  return { question, playbackPositionSeconds };
+}
+
+function toSegmentResponse(segment: StoredSteeredSegment): SteeredSegmentResponse {
+  return {
+    segmentId: segment.id,
+    episodeId: segment.episodeId,
+    question: segment.question,
+    playbackPositionSeconds: segment.playbackPositionSeconds,
+    durationSeconds: segment.durationSeconds,
+    transcript: segment.transcript.map((turn) => ({
+      id: turn.id,
+      speaker: turn.speaker,
+      speakerLabel: turn.speakerLabel,
+      text: turn.text,
+    })),
+    audioUrl: `/api/podcasts/${segment.episodeId}/segments/${segment.id}/audio`,
+    audioContentType: segment.audioContentType,
+    createdAt: segment.createdAt,
+  };
 }
 
 function toEpisodeResponse(

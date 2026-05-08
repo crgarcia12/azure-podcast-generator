@@ -11,6 +11,8 @@ export default defineConfig({
       JWT_SECRET: 'test-jwt-secret-for-vitest',
       LOG_LEVEL: 'silent',
       REGISTRATION_ENABLED: 'true',
+      // Make the SSE cast stream finish instantly in unit tests.
+      CAST_SEGMENT_PACE_MS: '0',
     },
     coverage: {
       provider: 'v8',
