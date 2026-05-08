@@ -19,6 +19,7 @@ import { clearSessions } from './models/session-store.js';
 import { createPodcastService, type PodcastService } from './services/podcast-service.js';
 import { createInteractiveSessionService, type InteractiveSessionService } from './services/interactive-session-service.js';
 import { createCastService, type CastService } from './services/cast-service.js';
+import { createAzureBeatProviderFromEnv } from './services/cast-service-azure.js';
 import { applyRuntimeDefaults } from './config/runtime-defaults.js';
 
 interface AppDependencies {
@@ -80,7 +81,7 @@ export function createApp(dependencies: AppDependencies = {}): express.Express {
   const app = express();
   const podcastService = dependencies.podcastService ?? createPodcastService();
   const interactiveSessionService = dependencies.interactiveSessionService ?? createInteractiveSessionService();
-  const castService = dependencies.castService ?? createCastService();
+  const castService = dependencies.castService ?? createCastService(createAzureBeatProviderFromEnv() ?? undefined);
   const configuredAllowedOrigins = new Set(getConfiguredAllowedOrigins());
 
   seedConfiguredAdminUser();

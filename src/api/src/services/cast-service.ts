@@ -15,6 +15,7 @@ interface PlannedBeat {
   // The guest's elaboration line.
   guestLine: string;
 }
+export type { PlannedBeat };
 
 interface QueuedQuestion {
   id: string;
@@ -29,6 +30,11 @@ export interface CastSession {
   segments: CastSegment[];
   outline: PlannedBeat[];
   outlineCursor: number;
+  // Resolves when the outline has been built. Mock provider resolves
+  // immediately; LLM-backed providers resolve after the chat-completion
+  // call returns. The streamer awaits this before pulling beats so the
+  // generator never sees a half-built outline.
+  outlineReady: Promise<void>;
   pendingQuestions: QueuedQuestion[];
   finished: boolean;
   // Internal: a promise that resolves whenever the session state changes
@@ -62,6 +68,25 @@ const SEGMENT_PACE_MS = Number(process.env.CAST_SEGMENT_PACE_MS ?? '2500');
 
 const PROVIDER_NAME = 'mock-template';
 const MODEL_DISPLAY_NAME = 'PodCraft mock outline v2';
+
+// Pluggable beat-generation backend. The mock provider returns the static
+// templates below; the Azure provider calls Azure OpenAI. The CastService
+// uses the provider for outline + answer beats but handles all session,
+// streaming, pacing, and queueing logic itself.
+export interface BeatProvider {
+  providerName: string;
+  modelDisplayName: string;
+  buildOutline(topic: string, style: string): Promise<PlannedBeat[]>;
+  buildAnswerBeats(input: {
+    topic: string;
+    style: string;
+    question: string;
+    transcriptSoFar: CastSegment[];
+  }): Promise<PlannedBeat[]>;
+  // The system prompt this provider would (or does) send to its underlying
+  // LLM. Surfaced via /api/cast/:id/meta for transparency.
+  buildSystemPrompt(topic: string, style: string): string;
+}
 
 export class CastValidationError extends Error {
   constructor(message: string) {
@@ -377,8 +402,27 @@ export interface CastService {
   ): AsyncGenerator<CastSegment, void, void>;
 }
 
-export function createCastService(): CastService {
+// Mock provider — returns the templated outline / answer beats synchronously.
+// Used as the default and as a graceful fallback when the LLM provider errors.
+export function createMockBeatProvider(): BeatProvider {
+  return {
+    providerName: PROVIDER_NAME,
+    modelDisplayName: MODEL_DISPLAY_NAME,
+    async buildOutline(topic: string, style: string): Promise<PlannedBeat[]> {
+      return buildOutline(topic, style);
+    },
+    async buildAnswerBeats({ topic, style, question }) {
+      return buildAnswerBeats(topic, question, style);
+    },
+    buildSystemPrompt(topic: string, style: string): string {
+      return buildSystemPrompt(topic, style);
+    },
+  };
+}
+
+export function createCastService(provider?: BeatProvider): CastService {
   const sessions = new Map<string, CastSession>();
+  const beatProvider: BeatProvider = provider ?? createMockBeatProvider();
 
   function notify(session: CastSession): void {
     const old = session.signal;
@@ -404,12 +448,26 @@ export function createCastService(): CastService {
         style,
         createdAt: new Date().toISOString(),
         segments: [],
-        outline: buildOutline(topic, style),
+        outline: [],
         outlineCursor: 0,
+        outlineReady: Promise.resolve(),
         pendingQuestions: [],
         finished: false,
         signal: makeSignal(),
       };
+      // Kick off outline generation. For mock this resolves on the next tick;
+      // for Azure this awaits a chat-completion call. Errors are caught and
+      // fallback to the mock template so a transient LLM failure can never
+      // break a session.
+      session.outlineReady = (async () => {
+        try {
+          session.outline = await beatProvider.buildOutline(topic, style);
+        } catch (err) {
+          console.error('[cast] outline generation failed; falling back to template', err);
+          session.outline = buildOutline(topic, style);
+        }
+        notify(session);
+      })();
       sessions.set(session.id, session);
       return session;
     },
@@ -426,9 +484,9 @@ export function createCastService(): CastService {
         topic: session.topic,
         style: session.style,
         createdAt: session.createdAt,
-        provider: PROVIDER_NAME,
-        modelDisplayName: MODEL_DISPLAY_NAME,
-        systemPrompt: buildSystemPrompt(session.topic, session.style),
+        provider: beatProvider.providerName,
+        modelDisplayName: beatProvider.modelDisplayName,
+        systemPrompt: beatProvider.buildSystemPrompt(session.topic, session.style),
       };
     },
 
@@ -463,6 +521,12 @@ export function createCastService(): CastService {
         yield segment;
       }
 
+      // Wait for the outline to be ready before pulling beats. With the mock
+      // provider this is effectively instant; with the LLM provider it can
+      // take a few seconds on the first stream of a new session.
+      await session.outlineReady;
+      if (abort.aborted) return;
+
       while (!abort.aborted) {
         // Resolve the next batch of beats in priority order:
         //   1. Pending listener question → multi-beat answer (interrupts)
@@ -472,7 +536,18 @@ export function createCastService(): CastService {
           const q = session.pendingQuestions.shift()!;
           // A question revives a wrapped show so the host can address it.
           session.finished = false;
-          beats = buildAnswerBeats(session.topic, q.text, session.style);
+          try {
+            beats = await beatProvider.buildAnswerBeats({
+              topic: session.topic,
+              style: session.style,
+              question: q.text,
+              transcriptSoFar: session.segments.slice(),
+            });
+          } catch (err) {
+            console.error('[cast] answer-beat generation failed; using template', err);
+            beats = buildAnswerBeats(session.topic, q.text, session.style);
+          }
+          if (abort.aborted) return;
         } else if (session.outlineCursor < session.outline.length) {
           const beat = session.outline[session.outlineCursor++];
           if (!beat) continue;

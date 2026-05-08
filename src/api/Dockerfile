@@ -50,6 +50,27 @@ ENV SEED_ADMIN_USERNAME=admin
 ENV SEED_ADMIN_PASSWORD=admin1234
 ENV REGISTRATION_ENABLED=true
 
+# --- Azure OpenAI (cast service LLM provider) ---
+# These NON-SECRET pointers tell the cast-service to call a real LLM instead
+# of the mock template. Authentication happens at runtime via federated
+# managed identity:
+#   * The pod's default ServiceAccount mints a JWT (audience
+#     api://AzureADTokenExchange) using the K8s TokenRequest API.
+#   * That JWT is exchanged for an Azure access token against AAD using
+#     the user-assigned identity below as the client.
+#   * The user-assigned identity has Cognitive Services / OpenAI User
+#     roles on the AI Foundry resource. No API keys are shipped.
+# See src/api/src/services/k8s-aad-credential.ts for the implementation
+# and LILIPUT_DEPLOY_CONTRACT.md for why this is baked into the image
+# rather than configured on the Deployment.
+ENV LLM_PROVIDER=azure
+ENV AZURE_OPENAI_ENDPOINT=https://compy-foundry-ercqwl.cognitiveservices.azure.com
+ENV AZURE_OPENAI_DEPLOYMENT_NAME=podcast-gpt-4o-mini
+ENV AZURE_OPENAI_API_VERSION=2024-10-21
+ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o-mini (Azure OpenAI · compy-foundry)"
+ENV AZURE_TENANT_ID=f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3
+ENV AZURE_OPENAI_CLIENT_ID=f14665ae-86f5-41c2-95ba-96e817132222
+
 WORKDIR /app
 
 # API artifacts
