@@ -116,10 +116,55 @@ const SPEED_PRESETS = [0.85, 1.0, 1.15, 1.3, 1.5, 1.75] as const;
 const DEFAULT_SPEED_INDEX = 1; // 1.0x
 const SPEED_STORAGE_KEY = 'podcraft.playback.speed';
 const STYLE_STORAGE_KEY = 'podcraft.style.preset';
+const HOST_VOICE_STORAGE_KEY = 'podcraft.voice.host';
+const GUEST_VOICE_STORAGE_KEY = 'podcraft.voice.guest';
+const HOST_PITCH_STORAGE_KEY = 'podcraft.pitch.host';
+const GUEST_PITCH_STORAGE_KEY = 'podcraft.pitch.guest';
+// Per-speaker pitch slider range. Most engines clamp pitch to [0, 2] with 1.0
+// being neutral; we narrow that to a useful musical range so the slider feels
+// responsive without anyone landing on a chipmunk preset by accident.
+const PITCH_MIN = 0.5;
+const PITCH_MAX = 1.6;
+const DEFAULT_HOST_PITCH = 1.18;
+const DEFAULT_GUEST_PITCH = 0.82;
 
 function clampSpeed(n: number): number {
   if (!Number.isFinite(n)) return SPEED_PRESETS[DEFAULT_SPEED_INDEX];
   return Math.max(0.6, Math.min(2.0, n));
+}
+
+function clampPitch(n: number, fallback: number): number {
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(PITCH_MIN, Math.min(PITCH_MAX, n));
+}
+
+// Score a voice by how natural it's likely to sound. Engines that ship
+// "neural", "natural", "online", or "premium" voices win over the legacy
+// formant-synth ones. Used to push the best voices to the top of the picker.
+function voiceQualityScore(v: SpeechSynthesisVoice): number {
+  const name = v.name.toLowerCase();
+  let score = 0;
+  if (/(neural|natural)/i.test(name)) score += 100;
+  if (/(online|cloud|premium|enhanced|hd)/i.test(name)) score += 60;
+  if (/^google /i.test(name)) score += 40; // Chrome's online voices
+  if (/^microsoft /i.test(name)) score += 30;
+  if (v.localService === false) score += 25; // remote/online tend to be better
+  if (v.lang.toLowerCase().startsWith('en')) score += 10;
+  if (v.default) score += 5;
+  return score;
+}
+
+// Sort voices: English first, then by quality score, then alphabetical.
+function rankVoices(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice[] {
+  return [...voices].sort((a, b) => {
+    const aEn = a.lang.toLowerCase().startsWith('en') ? 0 : 1;
+    const bEn = b.lang.toLowerCase().startsWith('en') ? 0 : 1;
+    if (aEn !== bEn) return aEn - bEn;
+    const aScore = voiceQualityScore(a);
+    const bScore = voiceQualityScore(b);
+    if (aScore !== bScore) return bScore - aScore;
+    return a.name.localeCompare(b.name);
+  });
 }
 
 function selectVoicePair(voices: SpeechSynthesisVoice[]): VoicePair {
@@ -149,12 +194,31 @@ export default function Home() {
   // and let the listener flip to text from the asking screen.
   const [askMode, setAskMode] = useState<'voice' | 'text'>('voice');
 
+  // Voice picker state. `voicesAvailable` is the live list of voices the
+  // browser exposes (re-fetched on `voiceschanged`). `hostVoiceURI` /
+  // `guestVoiceURI` are the URIs the listener has explicitly chosen — null
+  // means "use the auto-pick fallback". `hostPitch` / `guestPitch` are
+  // per-speaker pitch multipliers stored separately so the listener can tame
+  // an artificial-sounding voice without changing which voice plays.
+  const [voicesAvailable, setVoicesAvailable] = useState<SpeechSynthesisVoice[]>([]);
+  const [hostVoiceURI, setHostVoiceURI] = useState<string | null>(null);
+  const [guestVoiceURI, setGuestVoiceURI] = useState<string | null>(null);
+  const [hostPitch, setHostPitch] = useState<number>(DEFAULT_HOST_PITCH);
+  const [guestPitch, setGuestPitch] = useState<number>(DEFAULT_GUEST_PITCH);
+  const [showVoices, setShowVoices] = useState(false);
+
   const queueRef = useRef<CastSegment[]>([]);
   const speakingRef = useRef<boolean>(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
   const voicePairRef = useRef<VoicePair>({ host: null, guest: null });
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
+  // User overrides for which voice each speaker should use. Read inside
+  // speakNext via refs so changing a voice doesn't drop the in-flight queue.
+  const hostVoiceURIRef = useRef<string | null>(null);
+  const guestVoiceURIRef = useRef<string | null>(null);
+  const hostPitchRef = useRef<number>(DEFAULT_HOST_PITCH);
+  const guestPitchRef = useRef<number>(DEFAULT_GUEST_PITCH);
   // Latest speed in a ref so speakNext sees it without re-creating the callback
   // (which would risk dropping the in-flight queue).
   const speedRef = useRef<number>(SPEED_PRESETS[DEFAULT_SPEED_INDEX]);
@@ -179,6 +243,29 @@ export default function Home() {
       }
       const lastStyle = window.localStorage.getItem(STYLE_STORAGE_KEY);
       if (lastStyle) setStyleInput(lastStyle);
+
+      const savedHostVoice = window.localStorage.getItem(HOST_VOICE_STORAGE_KEY);
+      if (savedHostVoice) {
+        setHostVoiceURI(savedHostVoice);
+        hostVoiceURIRef.current = savedHostVoice;
+      }
+      const savedGuestVoice = window.localStorage.getItem(GUEST_VOICE_STORAGE_KEY);
+      if (savedGuestVoice) {
+        setGuestVoiceURI(savedGuestVoice);
+        guestVoiceURIRef.current = savedGuestVoice;
+      }
+      const savedHostPitch = window.localStorage.getItem(HOST_PITCH_STORAGE_KEY);
+      if (savedHostPitch) {
+        const n = clampPitch(Number.parseFloat(savedHostPitch), DEFAULT_HOST_PITCH);
+        setHostPitch(n);
+        hostPitchRef.current = n;
+      }
+      const savedGuestPitch = window.localStorage.getItem(GUEST_PITCH_STORAGE_KEY);
+      if (savedGuestPitch) {
+        const n = clampPitch(Number.parseFloat(savedGuestPitch), DEFAULT_GUEST_PITCH);
+        setGuestPitch(n);
+        guestPitchRef.current = n;
+      }
     } catch {
       /* localStorage unavailable — fall back to defaults */
     }
@@ -194,14 +281,14 @@ export default function Home() {
     }
   }, [speed]);
 
-  // Keep latest voice list (Chrome populates asynchronously).
+  // Keep latest voice list (Chrome populates asynchronously) and surface it
+  // to the picker UI via state.
   useEffect(() => {
     if (!speechSupported) return;
     const sync = () => {
-      voicesRef.current = window.speechSynthesis.getVoices();
-      // Re-pick voices any time the list changes — only updates if not yet chosen
-      // OR if previous choices are no longer in the list.
-      const have = voicesRef.current;
+      const have = window.speechSynthesis.getVoices();
+      voicesRef.current = have;
+      setVoicesAvailable(have);
       const stillThere = (v: SpeechSynthesisVoice | null) =>
         !v || have.some((x) => x.voiceURI === v.voiceURI);
       if (
@@ -219,6 +306,42 @@ export default function Home() {
       window.speechSynthesis.removeEventListener?.('voiceschanged', sync);
     };
   }, [speechSupported]);
+
+  // Persist + ref-sync voice/pitch overrides whenever they change.
+  useEffect(() => {
+    hostVoiceURIRef.current = hostVoiceURI;
+    try {
+      if (hostVoiceURI) window.localStorage?.setItem(HOST_VOICE_STORAGE_KEY, hostVoiceURI);
+      else window.localStorage?.removeItem(HOST_VOICE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [hostVoiceURI]);
+  useEffect(() => {
+    guestVoiceURIRef.current = guestVoiceURI;
+    try {
+      if (guestVoiceURI) window.localStorage?.setItem(GUEST_VOICE_STORAGE_KEY, guestVoiceURI);
+      else window.localStorage?.removeItem(GUEST_VOICE_STORAGE_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, [guestVoiceURI]);
+  useEffect(() => {
+    hostPitchRef.current = hostPitch;
+    try {
+      window.localStorage?.setItem(HOST_PITCH_STORAGE_KEY, String(hostPitch));
+    } catch {
+      /* ignore */
+    }
+  }, [hostPitch]);
+  useEffect(() => {
+    guestPitchRef.current = guestPitch;
+    try {
+      window.localStorage?.setItem(GUEST_PITCH_STORAGE_KEY, String(guestPitch));
+    } catch {
+      /* ignore */
+    }
+  }, [guestPitch]);
 
   const speakNext = useCallback(() => {
     if (!speechSupported) return;
@@ -241,19 +364,27 @@ export default function Home() {
     }
 
     const utter = new SpeechSynthesisUtterance(next.text);
-    const chosen =
+    // Resolve the voice for this speaker. Order:
+    //   1. User override (from the Voices picker)
+    //   2. Auto-picked voice from selectVoicePair()
+    //   3. Engine default (let the browser pick)
+    const speakerOverrideURI =
+      next.speaker === 'host' ? hostVoiceURIRef.current : guestVoiceURIRef.current;
+    const overrideVoice =
+      speakerOverrideURI && voicesRef.current.find((v) => v.voiceURI === speakerOverrideURI);
+    const fallbackVoice =
       next.speaker === 'host' ? voicePairRef.current.host : voicePairRef.current.guest;
+    const chosen = overrideVoice || fallbackVoice;
     if (chosen) utter.voice = chosen;
     // Strong pitch + rate distinction so even when the engine collapses to a
     // single voice (some Linux/iOS configs) the host and guest sound different.
     // The user-controlled speed multiplier scales the per-speaker base rate.
     const baseRate = next.speaker === 'host' ? 1.02 : 0.97;
     utter.rate = clampSpeed(baseRate * speedRef.current);
-    if (next.speaker === 'host') {
-      utter.pitch = 1.18;
-    } else {
-      utter.pitch = 0.82;
-    }
+    utter.pitch = clampPitch(
+      next.speaker === 'host' ? hostPitchRef.current : guestPitchRef.current,
+      next.speaker === 'host' ? DEFAULT_HOST_PITCH : DEFAULT_GUEST_PITCH,
+    );
     utter.volume = 1;
     utter.onend = () => {
       speakingRef.current = false;
@@ -268,6 +399,55 @@ export default function Home() {
     utteranceRef.current = utter;
     window.speechSynthesis.speak(utter);
   }, [speechSupported]);
+
+  // Speak a short sample using the chosen voice + pitch so the listener can
+  // compare options before committing. Cancels any in-flight playback so the
+  // preview takes precedence; the show resumes from the queue afterwards.
+  const previewVoice = useCallback(
+    (speaker: Speaker) => {
+      if (!speechSupported) return;
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        /* ignore */
+      }
+      speakingRef.current = false;
+      utteranceRef.current = null;
+
+      const sample =
+        speaker === 'host'
+          ? "Hi there, I'm your host. This is a quick voice preview."
+          : "And I'm your guest. Here's how I sound on this one.";
+      const utter = new SpeechSynthesisUtterance(sample);
+      const overrideURI = speaker === 'host' ? hostVoiceURI : guestVoiceURI;
+      const overrideVoice =
+        overrideURI && voicesAvailable.find((v) => v.voiceURI === overrideURI);
+      const fallbackVoice =
+        speaker === 'host' ? voicePairRef.current.host : voicePairRef.current.guest;
+      const chosen = overrideVoice || fallbackVoice;
+      if (chosen) utter.voice = chosen;
+      const baseRate = speaker === 'host' ? 1.02 : 0.97;
+      utter.rate = clampSpeed(baseRate * speedRef.current);
+      utter.pitch = clampPitch(
+        speaker === 'host' ? hostPitch : guestPitch,
+        speaker === 'host' ? DEFAULT_HOST_PITCH : DEFAULT_GUEST_PITCH,
+      );
+      utter.volume = 1;
+      utter.onend = () => {
+        // After the preview, resume the queue if there's anything pending.
+        setTimeout(() => speakNext(), 60);
+      };
+      window.speechSynthesis.speak(utter);
+    },
+    [guestPitch, guestVoiceURI, hostPitch, hostVoiceURI, speakNext, speechSupported, voicesAvailable],
+  );
+
+  const resetVoiceOverrides = useCallback(() => {
+    setHostVoiceURI(null);
+    setGuestVoiceURI(null);
+    setHostPitch(DEFAULT_HOST_PITCH);
+    setGuestPitch(DEFAULT_GUEST_PITCH);
+  }, []);
 
   const cancelSpeech = useCallback(() => {
     if (!speechSupported) return;
@@ -744,6 +924,16 @@ export default function Home() {
               >
                 {showAbout ? 'Hide about' : 'About this episode'}
               </button>
+              {speechSupported ? (
+                <button
+                  type="button"
+                  onClick={() => setShowVoices((v) => !v)}
+                  className="text-xs uppercase tracking-[0.25em] text-white/40 underline-offset-4 hover:text-white/80 hover:underline"
+                  aria-expanded={showVoices}
+                >
+                  {showVoices ? 'Hide voices' : 'Choose voices'}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={reset}
@@ -778,6 +968,24 @@ export default function Home() {
                   phrasing of the mock today.
                 </p>
               </div>
+            ) : null}
+
+            {showVoices && speechSupported ? (
+              <VoicePicker
+                voicesAvailable={voicesAvailable}
+                hostVoiceURI={hostVoiceURI}
+                guestVoiceURI={guestVoiceURI}
+                hostPitch={hostPitch}
+                guestPitch={guestPitch}
+                activeHost={voicePairRef.current.host}
+                activeGuest={voicePairRef.current.guest}
+                onHostVoiceChange={setHostVoiceURI}
+                onGuestVoiceChange={setGuestVoiceURI}
+                onHostPitchChange={setHostPitch}
+                onGuestPitchChange={setGuestPitch}
+                onPreview={previewVoice}
+                onReset={resetVoiceOverrides}
+              />
             ) : null}
           </section>
         ) : null}
@@ -942,5 +1150,153 @@ export default function Home() {
         </footer>
       </div>
     </main>
+  );
+}
+
+interface VoicePickerProps {
+  voicesAvailable: SpeechSynthesisVoice[];
+  hostVoiceURI: string | null;
+  guestVoiceURI: string | null;
+  hostPitch: number;
+  guestPitch: number;
+  activeHost: SpeechSynthesisVoice | null;
+  activeGuest: SpeechSynthesisVoice | null;
+  onHostVoiceChange: (uri: string | null) => void;
+  onGuestVoiceChange: (uri: string | null) => void;
+  onHostPitchChange: (n: number) => void;
+  onGuestPitchChange: (n: number) => void;
+  onPreview: (speaker: Speaker) => void;
+  onReset: () => void;
+}
+
+function VoicePicker(props: VoicePickerProps) {
+  const ranked = useMemo(() => rankVoices(props.voicesAvailable), [props.voicesAvailable]);
+  const hostActive =
+    (props.hostVoiceURI && ranked.find((v) => v.voiceURI === props.hostVoiceURI)) || props.activeHost;
+  const guestActive =
+    (props.guestVoiceURI && ranked.find((v) => v.voiceURI === props.guestVoiceURI)) || props.activeGuest;
+
+  return (
+    <div className="w-full max-w-2xl rounded-2xl border border-white/10 bg-black/30 px-5 py-4 text-left text-sm text-white/70 backdrop-blur">
+      <div className="flex items-center justify-between">
+        <p className="text-[11px] uppercase tracking-[0.25em] text-white/40">Choose voices</p>
+        <button
+          type="button"
+          onClick={props.onReset}
+          className="text-[11px] uppercase tracking-[0.2em] text-white/40 underline-offset-4 hover:text-white/80 hover:underline"
+        >
+          Reset to auto
+        </button>
+      </div>
+      {ranked.length === 0 ? (
+        <p className="mt-3 text-[12px] text-white/50">
+          No browser voices available yet — give the page a moment, or refresh.
+        </p>
+      ) : null}
+
+      <VoicePickerRow
+        label="Host"
+        roleHint={`Currently: ${hostActive ? `${hostActive.name} (${hostActive.lang})` : 'engine default'}`}
+        voices={ranked}
+        selectedURI={props.hostVoiceURI}
+        pitch={props.hostPitch}
+        defaultPitch={DEFAULT_HOST_PITCH}
+        onVoiceChange={props.onHostVoiceChange}
+        onPitchChange={props.onHostPitchChange}
+        onPreview={() => props.onPreview('host')}
+      />
+      <VoicePickerRow
+        label="Guest"
+        roleHint={`Currently: ${guestActive ? `${guestActive.name} (${guestActive.lang})` : 'engine default'}`}
+        voices={ranked}
+        selectedURI={props.guestVoiceURI}
+        pitch={props.guestPitch}
+        defaultPitch={DEFAULT_GUEST_PITCH}
+        onVoiceChange={props.onGuestVoiceChange}
+        onPitchChange={props.onGuestPitchChange}
+        onPreview={() => props.onPreview('guest')}
+      />
+
+      <p className="mt-3 text-[11px] text-white/40">
+        Tip: <span className="text-white/60">&quot;Natural&quot;</span>, <span className="text-white/60">&quot;Online&quot;</span>, and <span className="text-white/60">Google</span>{' '}
+        voices generally sound less robotic. Lowering the pitch can take some of the artificial edge off.
+      </p>
+    </div>
+  );
+}
+
+interface VoicePickerRowProps {
+  label: string;
+  roleHint: string;
+  voices: SpeechSynthesisVoice[];
+  selectedURI: string | null;
+  pitch: number;
+  defaultPitch: number;
+  onVoiceChange: (uri: string | null) => void;
+  onPitchChange: (n: number) => void;
+  onPreview: () => void;
+}
+
+function VoicePickerRow(props: VoicePickerRowProps) {
+  return (
+    <div className="mt-3 rounded-xl bg-white/5 px-3 py-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-white/70">{props.label}</p>
+        <button
+          type="button"
+          onClick={props.onPreview}
+          className="rounded-full bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.2em] text-white/80 hover:bg-white/20"
+        >
+          Preview
+        </button>
+      </div>
+      <p className="mt-1 text-[11px] text-white/40">{props.roleHint}</p>
+
+      <label className="mt-2 block text-[11px] uppercase tracking-[0.2em] text-white/40">
+        Voice
+      </label>
+      <select
+        value={props.selectedURI ?? ''}
+        onChange={(e) => props.onVoiceChange(e.target.value ? e.target.value : null)}
+        className="mt-1 w-full rounded-lg border border-white/10 bg-black/40 px-2 py-2 text-sm text-white/90 outline-none focus:border-fuchsia-300/50"
+      >
+        <option value="">— Auto-pick (recommended) —</option>
+        {props.voices.map((v) => {
+          const tag = /(neural|natural|online|premium|enhanced)/i.test(v.name)
+            ? '★ '
+            : '';
+          return (
+            <option key={v.voiceURI} value={v.voiceURI}>
+              {tag}
+              {v.name} ({v.lang})
+              {v.localService === false ? ' · online' : ''}
+            </option>
+          );
+        })}
+      </select>
+
+      <label className="mt-3 block text-[11px] uppercase tracking-[0.2em] text-white/40">
+        Pitch · {props.pitch.toFixed(2)}
+      </label>
+      <div className="mt-1 flex items-center gap-3">
+        <input
+          type="range"
+          min={PITCH_MIN}
+          max={PITCH_MAX}
+          step={0.02}
+          value={props.pitch}
+          onChange={(e) => props.onPitchChange(Number.parseFloat(e.target.value))}
+          className="w-full accent-fuchsia-400"
+          aria-label={`${props.label} pitch`}
+        />
+        <button
+          type="button"
+          onClick={() => props.onPitchChange(props.defaultPitch)}
+          className="rounded-full border border-white/15 px-2 py-1 text-[10px] uppercase tracking-[0.2em] text-white/60 hover:bg-white/10"
+        >
+          Default
+        </button>
+      </div>
+    </div>
   );
 }

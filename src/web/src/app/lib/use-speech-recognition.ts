@@ -116,7 +116,7 @@ export function useSpeechRecognition(
 ): UseSpeechRecognitionResult {
   const { lang, continuous = false, onFinalResult } = options;
 
-  const ctor = useMemo(getSpeechRecognitionCtor, []);
+  const ctor = useMemo(() => getSpeechRecognitionCtor(), []);
   const isSupported = ctor !== null;
 
   const [status, setStatus] = useState<SpeechRecognitionStatus>('idle');
