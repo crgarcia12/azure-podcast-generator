@@ -1,20 +1,42 @@
 // Azure OpenAI-backed beat provider for the cast service. Generates outline
 // and listener-question answer beats by calling chat completions on the
-// configured Azure OpenAI deployment, using a federated managed identity
-// (see k8s-aad-credential.ts) for auth so we never need to ship API keys
-// or rely on the workload-identity webhook (which can't be configured on
-// the Liliput-managed Deployment).
+// configured Azure OpenAI deployment.
+//
+// Authentication preference, in order:
+//   1. `ClientSecretCredential` (AZURE_TENANT_ID / AZURE_CLIENT_ID /
+//      AZURE_CLIENT_SECRET) — populated from the in-cluster Kubernetes
+//      Secret `liliput-azure-sp` by `azure-secret-bootstrap.ts`. This is
+//      the standard, sanctioned path on Liliput previews.
+//   2. `K8sFederatedAadCredential` — legacy workload-identity-by-hand
+//      flow, kept as a fallback for environments where the per-repo SP
+//      isn't projected (e.g. local dev with `az login`).
 //
 // The provider degrades gracefully: if the LLM returns malformed JSON or
 // the call fails entirely, the cast service falls back to the mock template
 // so a transient outage never breaks user sessions.
 
 import type { TokenCredential } from '@azure/core-auth';
+import { ClientSecretCredential } from '@azure/identity';
 import type { BeatProvider, CastSegment, PlannedBeat } from './cast-service.js';
 import { K8sFederatedAadCredential } from './k8s-aad-credential.js';
+import { logger } from '../logger.js';
 
 const AZURE_COGNITIVE_SCOPE = 'https://cognitiveservices.azure.com/.default';
+// 2024-10-21 is the latest GA api-version that's available on the
+// `crgar-liliput-ai` resource and supports `max_completion_tokens` —
+// the parameter that gpt-5 / o-series reasoning models require in
+// place of the legacy `max_tokens`.
 const DEFAULT_API_VERSION = '2024-10-21';
+
+// Reasoning-class deployments require `max_completion_tokens` and reject
+// `temperature` (only the default 1.0 is supported). We send the request
+// body shaped for the model class so a single image works for both
+// classic chat models (gpt-4o-mini, etc.) and the new reasoning models
+// (gpt-5, gpt-5-mini, o1, o3, o4).
+function isReasoningModel(deployment: string): boolean {
+  const d = deployment.toLowerCase();
+  return /^(gpt-5|o1|o3|o4|chatgpt-5)/.test(d);
+}
 
 interface AzureBeatProviderConfig {
   endpoint: string;
@@ -29,6 +51,7 @@ interface AzureBeatProviderConfig {
 interface ChatCompletionResponse {
   choices?: Array<{
     message?: { content?: string | null };
+    finish_reason?: string;
   }>;
 }
 
@@ -129,18 +152,33 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
     // sessions that didn't ask for one.
     const targetDeployment = deploymentOverride?.trim() || config.deploymentName;
     const targetUrl = `${endpoint}/openai/deployments/${encodeURIComponent(targetDeployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+
+    // Reasoning-class models (gpt-5*, o-series) want `max_completion_tokens`
+    // and reject `temperature`. Older chat models accept either, but we
+    // standardise on `max_completion_tokens` since the 2024-10-21 GA API
+    // supports it everywhere on this resource.
+    //
+    // Budget needs to cover BOTH the reasoning trace and the visible
+    // answer for reasoning models — gpt-5 burns ~700-2200 tokens on
+    // hidden reasoning before emitting JSON. Anything below ~3500 risks
+    // `finish_reason: "length"` with empty content.
+    const reasoning = isReasoningModel(targetDeployment);
+    const requestBody: Record<string, unknown> = {
+      messages,
+      max_completion_tokens: reasoning ? 6000 : 2200,
+      response_format: { type: 'json_object' },
+    };
+    if (!reasoning) {
+      requestBody.temperature = 0.75;
+    }
+
     const response = await fetchImpl(targetUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken.token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        messages,
-        temperature: 0.75,
-        max_tokens: 2200,
-        response_format: { type: 'json_object' },
-      }),
+      body: JSON.stringify(requestBody),
     });
     const text = await response.text();
     if (!response.ok) {
@@ -154,7 +192,11 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
     }
     const content = parsed.choices?.[0]?.message?.content;
     if (typeof content !== 'string' || !content.trim()) {
-      throw new Error('Azure OpenAI returned an empty completion');
+      const finishReason = parsed.choices?.[0]?.finish_reason;
+      throw new Error(
+        `Azure OpenAI returned an empty completion (finish_reason=${finishReason ?? 'unknown'}). ` +
+        'For reasoning models this usually means max_completion_tokens was exhausted by the hidden reasoning trace.',
+      );
     }
     return content;
   }
@@ -228,14 +270,33 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
   const apiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || DEFAULT_API_VERSION;
   const tenantId = process.env.AZURE_TENANT_ID?.trim();
   const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
+  const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
 
   if (!endpoint || !deployment || !tenantId || !clientId) return null;
 
-  const credential = new K8sFederatedAadCredential({
-    tenantId,
-    clientId,
-    serviceAccountName: process.env.AZURE_SERVICE_ACCOUNT?.trim() || 'default',
-  });
+  // Prefer the per-repo service-principal client secret (standard SDK path)
+  // over the homemade workload-identity flow. Falls back to the federated
+  // credential when the projected K8s Secret hasn't landed yet — that keeps
+  // the cast service working in environments where Liliput's
+  // app-registration tooling hasn't been run.
+  let credential: TokenCredential;
+  let credentialName: 'client-secret' | 'k8s-federated';
+  if (clientSecret) {
+    credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+    credentialName = 'client-secret';
+  } else {
+    credential = new K8sFederatedAadCredential({
+      tenantId,
+      clientId,
+      serviceAccountName: process.env.AZURE_SERVICE_ACCOUNT?.trim() || 'default',
+    });
+    credentialName = 'k8s-federated';
+  }
+
+  logger.info(
+    { endpoint, deployment, apiVersion, credential: credentialName },
+    'cast-service-azure: real Azure OpenAI provider configured',
+  );
 
   return createAzureBeatProvider({
     endpoint,
@@ -245,4 +306,113 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
     modelDisplayName: process.env.AZURE_OPENAI_MODEL_DISPLAY_NAME?.trim()
       || `${deployment} (Azure OpenAI)`,
   });
+}
+
+// List the chat-capable deployments visible at the configured Azure OpenAI
+// endpoint. Used by `/api/cast/models` to populate the model dropdown in
+// the UI. Returns `null` when Azure auth isn't configured (caller falls
+// back to a hardcoded list / hides the dropdown).
+export interface AvailableModelInfo {
+  // Deployment name to send to /api/cast (and to use as the URL segment
+  // when calling /openai/deployments/{name}/chat/completions).
+  deployment: string;
+  // The model behind the deployment (e.g. "gpt-5", "gpt-4o-mini") — used
+  // for the human-readable label in the UI.
+  model: string;
+  // Whether this deployment supports chat completions (the only thing
+  // PodCraft uses today). We surface non-chat deployments for transparency
+  // but the UI hides them.
+  chatCapable: boolean;
+}
+
+export async function listAzureChatDeployments(opts?: {
+  fetchImpl?: typeof fetch;
+}): Promise<AvailableModelInfo[] | null> {
+  if ((process.env.LLM_PROVIDER || '').toLowerCase() !== 'azure') return null;
+  const endpoint = process.env.AZURE_OPENAI_ENDPOINT?.trim();
+  const tenantId = process.env.AZURE_TENANT_ID?.trim();
+  const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
+  const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
+  const apiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || DEFAULT_API_VERSION;
+
+  if (!endpoint || !tenantId || !clientId) return null;
+
+  let credential: TokenCredential;
+  if (clientSecret) {
+    credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
+  } else {
+    credential = new K8sFederatedAadCredential({
+      tenantId,
+      clientId,
+      serviceAccountName: process.env.AZURE_SERVICE_ACCOUNT?.trim() || 'default',
+    });
+  }
+
+  const fetchImpl = opts?.fetchImpl ?? fetch;
+  let token;
+  try {
+    token = await credential.getToken(AZURE_COGNITIVE_SCOPE);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'listAzureChatDeployments: token acquisition failed',
+    );
+    return null;
+  }
+  if (!token) return null;
+
+  const normalised = normaliseEndpoint(endpoint);
+  const url = `${normalised}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`;
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token.token}`,
+        Accept: 'application/json',
+      },
+    });
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err), url },
+      'listAzureChatDeployments: network error',
+    );
+    return null;
+  }
+  const text = await response.text();
+  if (!response.ok) {
+    logger.warn(
+      { status: response.status, body: text.slice(0, 400), url },
+      'listAzureChatDeployments: non-2xx from Azure OpenAI',
+    );
+    return null;
+  }
+
+  let parsed: { data?: Array<{ id?: string; model?: string; capabilities?: { chat_completion?: boolean } }> };
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    logger.warn(
+      { err: err instanceof Error ? err.message : String(err) },
+      'listAzureChatDeployments: response was not JSON',
+    );
+    return null;
+  }
+
+  const items = parsed.data ?? [];
+  const result: AvailableModelInfo[] = [];
+  for (const item of items) {
+    if (!item || typeof item.id !== 'string') continue;
+    const deployment = item.id;
+    const model = typeof item.model === 'string' ? item.model : deployment;
+    // Heuristic: if the API surfaces a chat_completion capability, trust
+    // it. Otherwise fall back to a model-name allow-list — Azure OpenAI
+    // chat-capable models all start with one of these prefixes.
+    const capChat = item.capabilities?.chat_completion;
+    const chatCapable =
+      capChat === true ||
+      (capChat === undefined && /^(gpt-|o1|o3|o4|chatgpt)/i.test(model));
+    result.push({ deployment, model, chatCapable });
+  }
+  return result;
 }

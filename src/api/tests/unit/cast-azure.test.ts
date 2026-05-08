@@ -7,7 +7,12 @@ process.env.CAST_SEGMENT_PACE_MS = '0';
 
 interface ChatCallCapture {
   url: string;
-  body: { messages: Array<{ role: string; content: string }> };
+  body: {
+    messages: Array<{ role: string; content: string }>;
+    max_tokens?: number;
+    max_completion_tokens?: number;
+    temperature?: number;
+  };
 }
 
 function makeFakeFetch(replies: string[]): {
@@ -115,6 +120,61 @@ describe('createAzureBeatProvider', () => {
     });
     expect(provider.providerName).toBe('azure-openai');
     expect(provider.modelDisplayName).toBe('shiny-model');
+  });
+
+  it('uses max_completion_tokens and omits temperature for gpt-5 reasoning deployments', async () => {
+    const { fetch, calls } = makeFakeFetch([
+      JSON.stringify({ beats: [{ hostLine: 'h', guestLine: 'g' }] }),
+    ]);
+    const provider = createAzureBeatProvider({
+      endpoint: 'https://example.cognitiveservices.azure.com',
+      deploymentName: 'gpt-5',
+      credential: fakeCredential,
+      fetchImpl: fetch,
+    });
+    await provider.buildOutline({ topic: 'cosmic rays', style: 'lighthearted' });
+    expect(calls).toHaveLength(1);
+    const body = calls[0]!.body;
+    expect(body.max_completion_tokens).toBeGreaterThanOrEqual(3000);
+    expect(body.max_tokens).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+  });
+
+  it('keeps temperature for non-reasoning deployments and still uses max_completion_tokens', async () => {
+    const { fetch, calls } = makeFakeFetch([
+      JSON.stringify({ beats: [{ hostLine: 'h', guestLine: 'g' }] }),
+    ]);
+    const provider = createAzureBeatProvider({
+      endpoint: 'https://example.cognitiveservices.azure.com',
+      deploymentName: 'gpt-4o-mini',
+      credential: fakeCredential,
+      fetchImpl: fetch,
+    });
+    await provider.buildOutline({ topic: 'cosmic rays', style: 'lighthearted' });
+    const body = calls[0]!.body;
+    expect(body.max_completion_tokens).toBeGreaterThan(0);
+    expect(body.max_tokens).toBeUndefined();
+    expect(typeof body.temperature).toBe('number');
+  });
+
+  it('respects the reasoning-model rule on a per-call deploymentOverride', async () => {
+    const { fetch, calls } = makeFakeFetch([
+      JSON.stringify({ beats: [{ hostLine: 'h', guestLine: 'g' }] }),
+    ]);
+    const provider = createAzureBeatProvider({
+      endpoint: 'https://example.cognitiveservices.azure.com',
+      deploymentName: 'gpt-4o-mini',
+      credential: fakeCredential,
+      fetchImpl: fetch,
+    });
+    await provider.buildOutline({
+      topic: 'cosmic rays',
+      style: '',
+      deploymentOverride: 'gpt-5-mini',
+    });
+    const body = calls[0]!.body;
+    expect(body.temperature).toBeUndefined();
+    expect(body.max_completion_tokens).toBeGreaterThanOrEqual(3000);
   });
 
   it('parses well-formed beats JSON into PlannedBeat[]', async () => {

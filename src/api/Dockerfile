@@ -50,30 +50,32 @@ ENV SEED_ADMIN_USERNAME=admin
 ENV SEED_ADMIN_PASSWORD=admin1234
 ENV REGISTRATION_ENABLED=true
 
-# --- Azure OpenAI (cast service LLM provider) ---
+# --- Azure OpenAI / AI Foundry (cast service LLM provider) ---
 # These NON-SECRET pointers tell the cast-service to call a real LLM instead
-# of the mock template. Authentication happens at runtime via federated
-# managed identity:
-#   * The pod's default ServiceAccount mints a JWT (audience
-#     api://AzureADTokenExchange) using the K8s TokenRequest API.
-#   * That JWT is exchanged for an Azure access token against AAD using
-#     the user-assigned identity below as the client.
-#   * The user-assigned identity has Cognitive Services / OpenAI User
-#     roles on the AI Foundry resource. No API keys are shipped.
-# See src/api/src/services/k8s-aad-credential.ts for the implementation
-# and LILIPUT_DEPLOY_CONTRACT.md for why this is baked into the image
-# rather than configured on the Deployment.
+# of the mock template. AUTHENTICATION is provided by a per-repo Azure
+# service principal whose credentials are projected into the pod via the
+# `liliput-azure-sp` Kubernetes Secret (see
+# .github/skills/azure-app-registration). The API reads that Secret at
+# startup (services/azure-secret-bootstrap.ts) and populates
+# AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET into process.env
+# so ClientSecretCredential / DefaultAzureCredential just work.
 #
-# Endpoint and deployment name point at the only Azure OpenAI account
-# visible to the dev-preview subscription (`freshbite-openai-dev`,
-# resource group `rg-freshbite-dev`, gpt-4o deployment).
+# AZURE_OPENAI_ENDPOINT is also projected from the Secret at runtime, but
+# we bake a sensible default here so the image is usable in any env where
+# the operator has wired up `crgar-liliput-ai`.
+#
+# Deployments available on `crgar-liliput-ai`:
+#   * gpt-5             — chat (default)
+#   * gpt-5-mini        — chat
+#   * text-embedding-3-small — embeddings
+#   * whisper           — transcription
+#   * gpt-4o-mini-tts   — text-to-speech
 ENV LLM_PROVIDER=azure
-ENV AZURE_OPENAI_ENDPOINT=https://freshbite-openai-dev.openai.azure.com
-ENV AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
+ENV AZURE_OPENAI_ENDPOINT=https://crgar-liliput-ai.openai.azure.com/
+ENV AZURE_AI_FOUNDRY_ENDPOINT=https://crgar-liliput-ai.services.ai.azure.com/
+ENV AZURE_OPENAI_DEPLOYMENT_NAME=gpt-5
 ENV AZURE_OPENAI_API_VERSION=2024-10-21
-ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o (Azure OpenAI · freshbite-openai-dev)"
-ENV AZURE_TENANT_ID=f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3
-ENV AZURE_OPENAI_CLIENT_ID=f14665ae-86f5-41c2-95ba-96e817132222
+ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-5 (Azure AI Foundry · crgar-liliput-ai)"
 
 WORKDIR /app
 

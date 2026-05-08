@@ -4,9 +4,75 @@ import {
   CastNotFoundError,
   CastValidationError,
 } from '../services/cast-service.js';
+import { listAzureChatDeployments } from '../services/cast-service-azure.js';
 import { logger } from '../logger.js';
 
+// Hardcoded fallback list — used when Azure auth isn't wired up so the UI
+// still has something to show. Mirrors what's deployed in `crgar-liliput-ai`.
+const FALLBACK_CHAT_MODELS = [
+  { deployment: 'gpt-5', model: 'gpt-5', chatCapable: true },
+  { deployment: 'gpt-5-mini', model: 'gpt-5-mini', chatCapable: true },
+] as const;
+
 export function mapCastEndpoints(app: Express, service: CastService): void {
+  // List the chat-capable Azure OpenAI deployments visible to this pod.
+  // Used to populate the "Model" dropdown on the start screen so the
+  // listener picks from real deployments instead of typing a name and
+  // hoping it exists. Cached for 60s so a quick rerender doesn't hammer
+  // Azure with /openai/deployments calls.
+  let cachedModels: { items: Array<{ deployment: string; model: string }>; defaultDeployment: string; expiresAt: number } | null = null;
+  app.get('/api/cast/models', async (_req: Request, res: Response) => {
+    const now = Date.now();
+    if (cachedModels && cachedModels.expiresAt > now) {
+      res.status(200).json({
+        models: cachedModels.items,
+        defaultDeployment: cachedModels.defaultDeployment,
+        source: 'cache',
+      });
+      return;
+    }
+
+    let models: Array<{ deployment: string; model: string }> = [];
+    let source: 'azure' | 'fallback' = 'fallback';
+    try {
+      const fetched = await listAzureChatDeployments();
+      if (fetched && fetched.length > 0) {
+        models = fetched.filter((m) => m.chatCapable).map((m) => ({ deployment: m.deployment, model: m.model }));
+        source = 'azure';
+      }
+    } catch (err) {
+      logger.warn(
+        { err: err instanceof Error ? err.message : String(err) },
+        '/api/cast/models: live deployment listing failed; using fallback',
+      );
+    }
+    if (models.length === 0) {
+      models = FALLBACK_CHAT_MODELS.map((m) => ({ deployment: m.deployment, model: m.model }));
+      source = 'fallback';
+    }
+    const defaultDeployment =
+      process.env.AZURE_OPENAI_DEPLOYMENT_NAME?.trim() || models[0]?.deployment || 'gpt-5';
+
+    // Sort gpt-5 first, then gpt-5-mini, then the rest alphabetically — the
+    // "best" model is what most users want as the default visual.
+    models.sort((a, b) => {
+      const rank = (n: string) => {
+        if (n === 'gpt-5') return 0;
+        if (n === 'gpt-5-mini') return 1;
+        if (/^gpt-4o/.test(n)) return 2;
+        if (/^gpt-4/.test(n)) return 3;
+        return 9;
+      };
+      const ar = rank(a.deployment);
+      const br = rank(b.deployment);
+      if (ar !== br) return ar - br;
+      return a.deployment.localeCompare(b.deployment);
+    });
+
+    cachedModels = { items: models, defaultDeployment, expiresAt: now + 60_000 };
+    res.status(200).json({ models, defaultDeployment, source });
+  });
+
   // Create a new cast session for a topic. Anonymous — no auth required.
   app.post('/api/cast', (req: Request, res: Response) => {
     try {

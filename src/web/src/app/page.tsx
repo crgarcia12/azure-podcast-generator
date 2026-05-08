@@ -260,6 +260,14 @@ export default function Home() {
   const [hostPitch, setHostPitch] = useState<number>(DEFAULT_HOST_PITCH);
   const [guestPitch, setGuestPitch] = useState<number>(DEFAULT_GUEST_PITCH);
   const [showVoices, setShowVoices] = useState(false);
+  // Available chat-capable Azure OpenAI deployments — fetched once on mount
+  // and used to populate the model dropdown. Empty string === "use server
+  // default", which is what the cast service does when modelInput is "".
+  const [availableModels, setAvailableModels] = useState<
+    Array<{ deployment: string; model: string }>
+  >([]);
+  const [defaultModelDeployment, setDefaultModelDeployment] = useState<string>('');
+  const [modelsSource, setModelsSource] = useState<'azure' | 'fallback' | 'cache' | null>(null);
 
   const queueRef = useRef<CastSegment[]>([]);
   const speakingRef = useRef<boolean>(false);
@@ -342,6 +350,58 @@ export default function Home() {
       /* ignore */
     }
   }, [speed]);
+
+  // Fetch the chat-capable Azure OpenAI deployments visible to the API.
+  // Done once on mount; the API caches the upstream call for 60s. If the
+  // listener had previously stashed a model name that's no longer in the
+  // list, clear it so the dropdown lands on a real value.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiFetch('/api/cast/models');
+        if (!res.ok) return;
+        const data = (await res.json()) as {
+          models?: Array<{ deployment?: unknown; model?: unknown }>;
+          defaultDeployment?: unknown;
+          source?: unknown;
+        };
+        if (cancelled) return;
+        const cleaned = (data.models ?? [])
+          .map((m) => ({
+            deployment: typeof m.deployment === 'string' ? m.deployment : '',
+            model: typeof m.model === 'string' ? m.model : '',
+          }))
+          .filter((m) => m.deployment.length > 0);
+        setAvailableModels(cleaned);
+        if (typeof data.defaultDeployment === 'string') {
+          setDefaultModelDeployment(data.defaultDeployment);
+        }
+        if (typeof data.source === 'string') {
+          setModelsSource(data.source as 'azure' | 'fallback' | 'cache');
+        }
+        // Stale-model guard: drop the persisted override if it isn't in the
+        // live list. Otherwise the user could end up calling a deployment
+        // that was renamed/deleted.
+        setModelInput((prev) => {
+          if (!prev) return prev;
+          if (cleaned.some((m) => m.deployment === prev)) return prev;
+          try {
+            window.localStorage?.removeItem(MODEL_STORAGE_KEY);
+          } catch {
+            /* ignore */
+          }
+          return '';
+        });
+      } catch {
+        // Endpoint failed — leave dropdown empty so the UI falls back to
+        // a static "(server default)" only.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Keep latest voice list (Chrome populates asynchronously) and surface it
   // to the picker UI via state.
@@ -951,18 +1011,52 @@ export default function Home() {
                       <span className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/50">
                         Model / deployment
                       </span>
-                      <input
-                        type="text"
-                        value={modelInput}
-                        onChange={(e) => setModelInput(e.target.value)}
-                        placeholder="e.g. gpt-4o, gpt-4o-mini, gpt-35-turbo"
-                        className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white placeholder-white/30 outline-none transition focus:border-white/30 focus:bg-white/10"
-                        maxLength={120}
-                        disabled={phase === 'starting'}
-                        aria-label="Model deployment override"
-                      />
+                      {availableModels.length > 0 ? (
+                        <select
+                          value={modelInput}
+                          onChange={(e) => setModelInput(e.target.value)}
+                          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white outline-none transition focus:border-white/30 focus:bg-white/10"
+                          disabled={phase === 'starting'}
+                          aria-label="Model deployment override"
+                        >
+                          <option value="" className="bg-black text-white">
+                            Server default
+                            {defaultModelDeployment ? ` — ${defaultModelDeployment}` : ''}
+                          </option>
+                          {availableModels.map((m) => (
+                            <option
+                              key={m.deployment}
+                              value={m.deployment}
+                              className="bg-black text-white"
+                            >
+                              {m.deployment}
+                              {m.model && m.model !== m.deployment ? ` (${m.model})` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={modelInput}
+                          onChange={(e) => setModelInput(e.target.value)}
+                          placeholder="e.g. gpt-5, gpt-5-mini"
+                          className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white placeholder-white/30 outline-none transition focus:border-white/30 focus:bg-white/10"
+                          maxLength={120}
+                          disabled={phase === 'starting'}
+                          aria-label="Model deployment override"
+                        />
+                      )}
                       <span className="text-[11px] text-white/40">
-                        Leave blank to use the server&rsquo;s default deployment.
+                        {availableModels.length > 0 ? (
+                          <>
+                            {modelsSource === 'azure'
+                              ? `${availableModels.length} live deployment${availableModels.length === 1 ? '' : 's'} from Azure AI Foundry.`
+                              : `${availableModels.length} model${availableModels.length === 1 ? '' : 's'} (live listing unavailable — showing known defaults).`}{' '}
+                            Pick &ldquo;Server default&rdquo; to let the host choose.
+                          </>
+                        ) : (
+                          <>Leave blank to use the server&rsquo;s default deployment.</>
+                        )}
                       </span>
                     </label>
                     <label className="flex flex-col gap-1.5">

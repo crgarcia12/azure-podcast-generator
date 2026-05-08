@@ -35,6 +35,44 @@ function parseEvents(body: string): ParsedEvent[] {
 }
 
 describe('cast endpoints', () => {
+  describe('GET /api/cast/models', () => {
+    it('returns the fallback model list when Azure is not configured', async () => {
+      const prev = process.env.LLM_PROVIDER;
+      delete process.env.LLM_PROVIDER;
+      try {
+        const app = createApp();
+        const res = await request(app).get('/api/cast/models');
+        expect(res.status).toBe(200);
+        expect(res.body.source).toBe('fallback');
+        expect(Array.isArray(res.body.models)).toBe(true);
+        expect(res.body.models.length).toBeGreaterThan(0);
+        const deployments = res.body.models.map((m: { deployment: string }) => m.deployment);
+        expect(deployments).toContain('gpt-5');
+        expect(deployments).toContain('gpt-5-mini');
+        expect(typeof res.body.defaultDeployment).toBe('string');
+      } finally {
+        if (prev !== undefined) process.env.LLM_PROVIDER = prev;
+      }
+    });
+
+    it('places gpt-5 ahead of gpt-5-mini in the response', async () => {
+      const prev = process.env.LLM_PROVIDER;
+      delete process.env.LLM_PROVIDER;
+      try {
+        const app = createApp();
+        const res = await request(app).get('/api/cast/models');
+        expect(res.status).toBe(200);
+        const deployments: string[] = res.body.models.map((m: { deployment: string }) => m.deployment);
+        const gpt5Idx = deployments.indexOf('gpt-5');
+        const miniIdx = deployments.indexOf('gpt-5-mini');
+        expect(gpt5Idx).toBeGreaterThanOrEqual(0);
+        expect(miniIdx).toBeGreaterThan(gpt5Idx);
+      } finally {
+        if (prev !== undefined) process.env.LLM_PROVIDER = prev;
+      }
+    });
+  });
+
   describe('POST /api/cast', () => {
     it('creates a session for a valid topic without requiring auth', async () => {
       const app = createApp();
