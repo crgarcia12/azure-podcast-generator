@@ -158,17 +158,26 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
     // standardise on `max_completion_tokens` since the 2024-10-21 GA API
     // supports it everywhere on this resource.
     //
-    // Budget needs to cover BOTH the reasoning trace and the visible
-    // answer for reasoning models — gpt-5 burns ~700-2200 tokens on
-    // hidden reasoning before emitting JSON. Anything below ~3500 risks
-    // `finish_reason: "length"` with empty content.
+    // For reasoning models we also force `reasoning_effort: 'minimal'`.
+    // gpt-5 at default ("medium") effort can burn 3000-4000 hidden
+    // reasoning tokens before producing visible output, which:
+    //   • blows our token budget → `finish_reason: "length"` + empty body
+    //   • adds 60+ seconds of latency per call
+    // Podcast-script generation is a creative-writing task, not a math
+    // problem — minimal/zero reasoning produces equal-quality output in
+    // ~20s instead of 80s. Empirically (probed against gpt-5 on
+    // crgar-liliput-ai): minimal effort returns 1500-token JSON in 20s
+    // with 0 reasoning tokens; default effort returns 6000-token JSON
+    // in 80s with 3800 reasoning tokens.
     const reasoning = isReasoningModel(targetDeployment);
     const requestBody: Record<string, unknown> = {
       messages,
       max_completion_tokens: reasoning ? 6000 : 2200,
       response_format: { type: 'json_object' },
     };
-    if (!reasoning) {
+    if (reasoning) {
+      requestBody.reasoning_effort = 'minimal';
+    } else {
       requestBody.temperature = 0.75;
     }
 
@@ -333,7 +342,11 @@ export async function listAzureChatDeployments(opts?: {
   const tenantId = process.env.AZURE_TENANT_ID?.trim();
   const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
   const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION?.trim() || DEFAULT_API_VERSION;
+  // The data-plane "list deployments" endpoint is only served by the
+  // legacy 2023-03-15-preview API on most Azure OpenAI resources;
+  // 2024-10-21 (the chat default) returns 404 for /openai/deployments.
+  // Allow override for resources where this differs.
+  const apiVersion = process.env.AZURE_OPENAI_LIST_API_VERSION?.trim() || '2023-03-15-preview';
 
   if (!endpoint || !tenantId || !clientId) return null;
 
@@ -405,13 +418,18 @@ export async function listAzureChatDeployments(opts?: {
     if (!item || typeof item.id !== 'string') continue;
     const deployment = item.id;
     const model = typeof item.model === 'string' ? item.model : deployment;
-    // Heuristic: if the API surfaces a chat_completion capability, trust
-    // it. Otherwise fall back to a model-name allow-list — Azure OpenAI
-    // chat-capable models all start with one of these prefixes.
+    // Trust an explicit chat_completion capability flag if Azure surfaces
+    // one. When it doesn't (the 2023-03-15-preview list payload usually
+    // omits capabilities), fall back to a model-family allow-list and
+    // explicitly exclude non-chat speech / embedding / transcription
+    // deployments — those would otherwise sneak through the gpt- prefix
+    // (e.g. `gpt-4o-mini-tts`).
     const capChat = item.capabilities?.chat_completion;
+    const looksLikeChatFamily = /^(gpt-|o1|o3|o4|chatgpt)/i.test(model);
+    const isNonChatVariant = /(-tts|-transcribe|-stt|-realtime|-audio|whisper|embedding|embed|moderation|dall-?e|davinci|babbage|curie|ada)/i.test(model);
     const chatCapable =
       capChat === true ||
-      (capChat === undefined && /^(gpt-|o1|o3|o4|chatgpt)/i.test(model));
+      (capChat === undefined && looksLikeChatFamily && !isNonChatVariant);
     result.push({ deployment, model, chatCapable });
   }
   return result;

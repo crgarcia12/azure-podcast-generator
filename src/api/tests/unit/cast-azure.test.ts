@@ -12,6 +12,7 @@ interface ChatCallCapture {
     max_tokens?: number;
     max_completion_tokens?: number;
     temperature?: number;
+    reasoning_effort?: string;
   };
 }
 
@@ -138,6 +139,10 @@ describe('createAzureBeatProvider', () => {
     expect(body.max_completion_tokens).toBeGreaterThanOrEqual(3000);
     expect(body.max_tokens).toBeUndefined();
     expect(body.temperature).toBeUndefined();
+    // gpt-5 must run with minimal reasoning effort or hidden CoT will
+    // exhaust the token budget and the call returns finish_reason=length
+    // with empty content.
+    expect(body.reasoning_effort).toBe('minimal');
   });
 
   it('keeps temperature for non-reasoning deployments and still uses max_completion_tokens', async () => {
@@ -155,6 +160,9 @@ describe('createAzureBeatProvider', () => {
     expect(body.max_completion_tokens).toBeGreaterThan(0);
     expect(body.max_tokens).toBeUndefined();
     expect(typeof body.temperature).toBe('number');
+    // Non-reasoning models must NOT receive `reasoning_effort` — older
+    // gpt-4o deployments would reject the unknown parameter.
+    expect(body.reasoning_effort).toBeUndefined();
   });
 
   it('respects the reasoning-model rule on a per-call deploymentOverride', async () => {
