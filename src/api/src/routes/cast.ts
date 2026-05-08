@@ -10,9 +10,16 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
   // Create a new cast session for a topic. Anonymous — no auth required.
   app.post('/api/cast', (req: Request, res: Response) => {
     try {
-      const { topic, style } = (req.body ?? {}) as { topic?: unknown; style?: unknown };
+      const { topic, style, systemPrompt, model } = (req.body ?? {}) as {
+        topic?: unknown;
+        style?: unknown;
+        systemPrompt?: unknown;
+        model?: unknown;
+      };
       const session = service.startSession(typeof topic === 'string' ? topic : '', {
         style: typeof style === 'string' ? style : undefined,
+        systemPrompt: typeof systemPrompt === 'string' ? systemPrompt : undefined,
+        model: typeof model === 'string' ? model : undefined,
       });
       const meta = service.getMeta(session.id);
       res.status(201).json({
@@ -23,6 +30,8 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
         provider: meta?.provider,
         modelDisplayName: meta?.modelDisplayName,
         systemPrompt: meta?.systemPrompt,
+        systemPromptIsOverride: meta?.systemPromptIsOverride ?? false,
+        modelIsOverride: meta?.modelIsOverride ?? false,
       });
     } catch (err) {
       if (err instanceof CastValidationError) {

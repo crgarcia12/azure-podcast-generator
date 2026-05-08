@@ -26,6 +26,11 @@ export interface CastSession {
   id: string;
   topic: string;
   style: string; // user-provided "vibe" hint — empty string when not supplied
+  // Optional per-session overrides set when the listener wants to tweak the
+  // brain or steer the conversation before pressing Go. Empty string ===
+  // "use the provider default".
+  systemPromptOverride: string;
+  modelOverride: string;
   createdAt: string;
   segments: CastSegment[];
   outline: PlannedBeat[];
@@ -53,6 +58,11 @@ export interface CastMeta {
   // configured. Surfacing this gives listeners full transparency into what's
   // shaping the conversation and lets them iterate on the style.
   systemPrompt: string;
+  // Whether the prompt and model above came from a per-session listener
+  // override (true) or from the provider's defaults (false). Lets the UI
+  // show "(custom)" badges so the listener knows their tweak took effect.
+  systemPromptIsOverride: boolean;
+  modelIsOverride: boolean;
 }
 
 const MIN_TOPIC_LENGTH = 2;
@@ -60,6 +70,10 @@ const MAX_TOPIC_LENGTH = 200;
 const MIN_QUESTION_LENGTH = 1;
 const MAX_QUESTION_LENGTH = 400;
 const MAX_STYLE_LENGTH = 500;
+// Generous but bounded — enough room for a full multi-paragraph instruction
+// without letting a runaway client OOM the prompt-handling code path.
+const MAX_SYSTEM_PROMPT_LENGTH = 4000;
+const MAX_MODEL_NAME_LENGTH = 120;
 
 // Mid-segment pacing — gives the browser time to actually speak each segment
 // before the next one queues up, and lets a listener interrupt naturally
@@ -76,15 +90,23 @@ const MODEL_DISPLAY_NAME = 'PodCraft mock outline v2';
 export interface BeatProvider {
   providerName: string;
   modelDisplayName: string;
-  buildOutline(topic: string, style: string): Promise<PlannedBeat[]>;
+  buildOutline(input: {
+    topic: string;
+    style: string;
+    systemPromptOverride?: string;
+    deploymentOverride?: string;
+  }): Promise<PlannedBeat[]>;
   buildAnswerBeats(input: {
     topic: string;
     style: string;
     question: string;
     transcriptSoFar: CastSegment[];
+    systemPromptOverride?: string;
+    deploymentOverride?: string;
   }): Promise<PlannedBeat[]>;
   // The system prompt this provider would (or does) send to its underlying
-  // LLM. Surfaced via /api/cast/:id/meta for transparency.
+  // LLM. Surfaced via /api/cast/:id/meta for transparency. Pure function of
+  // (topic, style) — listener overrides are surfaced separately in CastMeta.
   buildSystemPrompt(topic: string, style: string): string;
 }
 
@@ -147,6 +169,50 @@ function trimStyle(raw: unknown): string {
   const trimmed = raw.trim().replace(/\s+/g, ' ');
   if (trimmed.length > MAX_STYLE_LENGTH) {
     throw new CastValidationError(`Style must be at most ${MAX_STYLE_LENGTH} characters`);
+  }
+  return trimmed;
+}
+
+// Optional listener-supplied system prompt. Preserves internal whitespace so
+// multi-paragraph prompts survive the round-trip; only trims leading/trailing
+// blanks. Empty/missing means "use the provider default".
+function trimSystemPromptOverride(raw: unknown): string {
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') {
+    throw new CastValidationError('systemPrompt must be a string');
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length > MAX_SYSTEM_PROMPT_LENGTH) {
+    throw new CastValidationError(
+      `System prompt must be at most ${MAX_SYSTEM_PROMPT_LENGTH} characters`,
+    );
+  }
+  return trimmed;
+}
+
+// Optional listener-supplied model / deployment name. The Azure provider uses
+// it to pick a different deployment for THIS session only (no global env
+// mutation). Empty/missing means "use the deployment baked into the image".
+function trimModelOverride(raw: unknown): string {
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') {
+    throw new CastValidationError('model must be a string');
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length > MAX_MODEL_NAME_LENGTH) {
+    throw new CastValidationError(
+      `Model must be at most ${MAX_MODEL_NAME_LENGTH} characters`,
+    );
+  }
+  // Azure deployment names allow letters, digits, dashes, underscores, periods.
+  // Reject anything with whitespace or path-like separators so the URL builder
+  // never has to think about it.
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+    throw new CastValidationError(
+      'Model must only contain letters, digits, dashes, underscores, or periods',
+    );
   }
   return trimmed;
 }
@@ -383,6 +449,11 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
 
 export interface StartSessionOptions {
   style?: string;
+  // Listener-supplied per-session overrides — see trimSystemPromptOverride /
+  // trimModelOverride for validation rules. Omit / empty string === "use
+  // the provider default for this run".
+  systemPrompt?: string;
+  model?: string;
 }
 
 export interface CastService {
@@ -408,7 +479,9 @@ export function createMockBeatProvider(): BeatProvider {
   return {
     providerName: PROVIDER_NAME,
     modelDisplayName: MODEL_DISPLAY_NAME,
-    async buildOutline(topic: string, style: string): Promise<PlannedBeat[]> {
+    async buildOutline({ topic, style }): Promise<PlannedBeat[]> {
+      // Mock provider ignores systemPromptOverride / deploymentOverride — it
+      // doesn't talk to an LLM, so a custom prompt has nothing to act on.
       return buildOutline(topic, style);
     },
     async buildAnswerBeats({ topic, style, question }) {
@@ -442,10 +515,14 @@ export function createCastService(provider?: BeatProvider): CastService {
     startSession(rawTopic: string, options: StartSessionOptions = {}): CastSession {
       const topic = trimTopic(rawTopic);
       const style = trimStyle(options.style);
+      const systemPromptOverride = trimSystemPromptOverride(options.systemPrompt);
+      const modelOverride = trimModelOverride(options.model);
       const session: CastSession = {
         id: randomUUID(),
         topic,
         style,
+        systemPromptOverride,
+        modelOverride,
         createdAt: new Date().toISOString(),
         segments: [],
         outline: [],
@@ -461,7 +538,12 @@ export function createCastService(provider?: BeatProvider): CastService {
       // break a session.
       session.outlineReady = (async () => {
         try {
-          session.outline = await beatProvider.buildOutline(topic, style);
+          session.outline = await beatProvider.buildOutline({
+            topic,
+            style,
+            systemPromptOverride: systemPromptOverride || undefined,
+            deploymentOverride: modelOverride || undefined,
+          });
         } catch (err) {
           console.error('[cast] outline generation failed; falling back to template', err);
           session.outline = buildOutline(topic, style);
@@ -479,14 +561,24 @@ export function createCastService(provider?: BeatProvider): CastService {
     getMeta(id: string): CastMeta | undefined {
       const session = sessions.get(id);
       if (!session) return undefined;
+      const baseSystemPrompt = beatProvider.buildSystemPrompt(session.topic, session.style);
+      // When the listener pinned a custom prompt or model for this session we
+      // surface the OVERRIDE in the meta — that's what's actually being sent to
+      // the LLM, and it's what the listener wants to see in "About this episode".
+      const effectivePrompt = session.systemPromptOverride || baseSystemPrompt;
+      const effectiveModel = session.modelOverride
+        ? `${session.modelOverride} (override)`
+        : beatProvider.modelDisplayName;
       return {
         id: session.id,
         topic: session.topic,
         style: session.style,
         createdAt: session.createdAt,
         provider: beatProvider.providerName,
-        modelDisplayName: beatProvider.modelDisplayName,
-        systemPrompt: beatProvider.buildSystemPrompt(session.topic, session.style),
+        modelDisplayName: effectiveModel,
+        systemPrompt: effectivePrompt,
+        systemPromptIsOverride: Boolean(session.systemPromptOverride),
+        modelIsOverride: Boolean(session.modelOverride),
       };
     },
 
@@ -542,6 +634,8 @@ export function createCastService(provider?: BeatProvider): CastService {
               style: session.style,
               question: q.text,
               transcriptSoFar: session.segments.slice(),
+              systemPromptOverride: session.systemPromptOverride || undefined,
+              deploymentOverride: session.modelOverride || undefined,
             });
           } catch (err) {
             console.error('[cast] answer-beat generation failed; using template', err);
@@ -591,4 +685,11 @@ async function pace(abort: AbortSignal): Promise<void> {
   }
 }
 
-export const __testing = { trimTopic, trimQuestion, trimStyle, classifyStyle };
+export const __testing = {
+  trimTopic,
+  trimQuestion,
+  trimStyle,
+  trimSystemPromptOverride,
+  trimModelOverride,
+  classifyStyle,
+};

@@ -57,11 +57,51 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fetch,
     });
-    await provider.buildOutline('quantum tea', '');
+    await provider.buildOutline({ topic: 'quantum tea', style: '' });
     expect(calls).toHaveLength(1);
     expect(calls[0]!.url).toBe(
       'https://example.cognitiveservices.azure.com/openai/deployments/my-dep/chat/completions?api-version=2024-10-21',
     );
+  });
+
+  it('honours per-session deployment override in the URL', async () => {
+    const { fetch, calls } = makeFakeFetch([
+      JSON.stringify({ beats: [{ hostLine: 'h', guestLine: 'g' }] }),
+    ]);
+    const provider = createAzureBeatProvider({
+      endpoint: 'https://example.cognitiveservices.azure.com/',
+      deploymentName: 'default-dep',
+      apiVersion: '2024-10-21',
+      credential: fakeCredential,
+      fetchImpl: fetch,
+    });
+    await provider.buildOutline({
+      topic: 'quantum tea',
+      style: '',
+      deploymentOverride: 'gpt-4o-mini-fast',
+    });
+    expect(calls[0]!.url).toBe(
+      'https://example.cognitiveservices.azure.com/openai/deployments/gpt-4o-mini-fast/chat/completions?api-version=2024-10-21',
+    );
+  });
+
+  it('honours per-session systemPrompt override in the system message', async () => {
+    const { fetch, calls } = makeFakeFetch([
+      JSON.stringify({ beats: [{ hostLine: 'h', guestLine: 'g' }] }),
+    ]);
+    const provider = createAzureBeatProvider({
+      endpoint: 'https://example.cognitiveservices.azure.com',
+      deploymentName: 'my-dep',
+      credential: fakeCredential,
+      fetchImpl: fetch,
+    });
+    await provider.buildOutline({
+      topic: 'quantum tea',
+      style: 'cozy',
+      systemPromptOverride: 'You are an iguana podcaster.',
+    });
+    const sys = calls[0]!.body.messages.find((m) => m.role === 'system');
+    expect(sys?.content).toBe('You are an iguana podcaster.');
   });
 
   it('reports the configured provider/model display names', () => {
@@ -91,7 +131,7 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fetch,
     });
-    const beats = await provider.buildOutline('topic-x', 'cozy');
+    const beats = await provider.buildOutline({ topic: 'topic-x', style: 'cozy' });
     expect(beats).toHaveLength(2);
     expect(beats[0]!.hostLine).toBe('Welcome back to the show.');
     expect(beats[1]!.guestLine).toBe('There is a deep history here.');
@@ -106,7 +146,7 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fetch,
     });
-    const beats = await provider.buildOutline('topic-x', '');
+    const beats = await provider.buildOutline({ topic: 'topic-x', style: '' });
     expect(beats).toEqual([{ hostLine: 'h', guestLine: 'g' }]);
   });
 
@@ -118,7 +158,7 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fetch,
     });
-    await expect(provider.buildOutline('t', '')).rejects.toThrow(/non-JSON/i);
+    await expect(provider.buildOutline({ topic: 't', style: '' })).rejects.toThrow(/non-JSON/i);
   });
 
   it('throws when the JSON has no beats array', async () => {
@@ -129,7 +169,7 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fetch,
     });
-    await expect(provider.buildOutline('t', '')).rejects.toThrow(/beats/i);
+    await expect(provider.buildOutline({ topic: 't', style: '' })).rejects.toThrow(/beats/i);
   });
 
   it('answer prompt receives the listener question verbatim', async () => {
@@ -183,7 +223,7 @@ describe('createAzureBeatProvider', () => {
       credential: fakeCredential,
       fetchImpl: fakeFetch,
     });
-    await provider.buildOutline('t', '');
+    await provider.buildOutline({ topic: 't', style: '' });
     expect(capturedAuth).toBe('Bearer fake-aad-token');
   });
 });
@@ -261,5 +301,60 @@ describe('CastService with injected Azure provider', () => {
     expect(collected.length).toBeGreaterThanOrEqual(1);
     // The mock fallback opens with "Welcome back to the show".
     expect(collected[0]!.text).toMatch(/Welcome back to the show/);
+  });
+
+  it('passes per-session systemPrompt + model overrides into the provider', async () => {
+    type Captured = {
+      topic: string;
+      style: string;
+      systemPromptOverride?: string;
+      deploymentOverride?: string;
+    };
+    const captured: Captured[] = [];
+    const fakeProvider: BeatProvider = {
+      providerName: 'fake-llm',
+      modelDisplayName: 'default-model',
+      buildSystemPrompt: () => 'default-prompt',
+      buildOutline: async (input) => {
+        captured.push(input);
+        return [{ hostLine: 'h', guestLine: 'g' }];
+      },
+      buildAnswerBeats: async () => [],
+    };
+    const service = createCastService(fakeProvider);
+    const session = service.startSession('relativity', {
+      style: 'cozy',
+      systemPrompt: 'You are a relaxed but precise host.',
+      model: 'gpt-4o-mini',
+    });
+    // Wait for the outline promise — startSession kicks it off async.
+    await new Promise((r) => setImmediate(r));
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.systemPromptOverride).toBe('You are a relaxed but precise host.');
+    expect(captured[0]!.deploymentOverride).toBe('gpt-4o-mini');
+    const meta = service.getMeta(session.id);
+    expect(meta?.systemPromptIsOverride).toBe(true);
+    expect(meta?.modelIsOverride).toBe(true);
+    expect(meta?.systemPrompt).toBe('You are a relaxed but precise host.');
+    expect(meta?.modelDisplayName).toMatch(/gpt-4o-mini/);
+    expect(meta?.modelDisplayName).toMatch(/override/);
+  });
+
+  it('reports IsOverride=false when no overrides are supplied', async () => {
+    const fakeProvider: BeatProvider = {
+      providerName: 'fake-llm',
+      modelDisplayName: 'default-model',
+      buildSystemPrompt: () => 'default-prompt',
+      buildOutline: async () => [{ hostLine: 'h', guestLine: 'g' }],
+      buildAnswerBeats: async () => [],
+    };
+    const service = createCastService(fakeProvider);
+    const session = service.startSession('weather');
+    await new Promise((r) => setImmediate(r));
+    const meta = service.getMeta(session.id);
+    expect(meta?.systemPromptIsOverride).toBe(false);
+    expect(meta?.modelIsOverride).toBe(false);
+    expect(meta?.systemPrompt).toBe('default-prompt');
+    expect(meta?.modelDisplayName).toBe('default-model');
   });
 });

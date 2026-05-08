@@ -112,16 +112,24 @@ function parseBeats(raw: string): PlannedBeat[] {
 export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatProvider {
   const endpoint = normaliseEndpoint(config.endpoint);
   const apiVersion = config.apiVersion ?? DEFAULT_API_VERSION;
-  const url = `${endpoint}/openai/deployments/${encodeURIComponent(config.deploymentName)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
   const modelDisplayName = config.modelDisplayName ?? `${config.deploymentName} (Azure OpenAI)`;
   const fetchImpl = config.fetchImpl ?? fetch;
 
-  async function callChat(messages: Array<{ role: string; content: string }>): Promise<string> {
+  async function callChat(
+    messages: Array<{ role: string; content: string }>,
+    deploymentOverride?: string,
+  ): Promise<string> {
     const accessToken = await config.credential.getToken(AZURE_COGNITIVE_SCOPE);
     if (!accessToken) {
       throw new Error('Azure credential returned no access token');
     }
-    const response = await fetchImpl(url, {
+    // Per-session deployment override lets a listener target a different
+    // model (e.g. gpt-4o-mini vs gpt-4o) without restarting the pod. URL is
+    // recomputed per-call instead of cached so an override doesn't leak into
+    // sessions that didn't ask for one.
+    const targetDeployment = deploymentOverride?.trim() || config.deploymentName;
+    const targetUrl = `${endpoint}/openai/deployments/${encodeURIComponent(targetDeployment)}/chat/completions?api-version=${encodeURIComponent(apiVersion)}`;
+    const response = await fetchImpl(targetUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${accessToken.token}`,
@@ -159,13 +167,17 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
       // the show as a whole. Answer prompts are constructed per-question.
       return buildOutlineSystemPrompt(topic, style);
     },
-    async buildOutline(topic: string, style: string): Promise<PlannedBeat[]> {
-      const sys = buildOutlineSystemPrompt(topic, style);
-      const user = `Topic: ${topic}\nStyle: ${style || '(no specific style requested — use a confident, friendly default)'}`;
+    async buildOutline(input): Promise<PlannedBeat[]> {
+      const { topic, style, systemPromptOverride, deploymentOverride } = input;
+      // Listener override wins over the canned prompt. We append topic/style
+      // as a user message in either case so the listener doesn't have to
+      // remember to put them in their custom prompt.
+      const sys = systemPromptOverride?.trim() || buildOutlineSystemPrompt(topic, style);
+      const user = `Topic: ${topic}\nStyle: ${style || '(no specific style requested — use a confident, friendly default)'}\n\nReturn ONLY a single JSON object of the form {"beats":[{"hostLine":"...","guestLine":"..."},...]} with 10 to 12 alternating beats. Each beat is one host line and one guest line. Open the very first beat with "Welcome back to the show.".`;
       const content = await callChat([
         { role: 'system', content: sys },
         { role: 'user', content: user },
-      ]);
+      ], deploymentOverride);
       return parseBeats(content);
     },
     async buildAnswerBeats(input: {
@@ -173,7 +185,13 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
       style: string;
       question: string;
       transcriptSoFar: CastSegment[];
+      systemPromptOverride?: string;
+      deploymentOverride?: string;
     }): Promise<PlannedBeat[]> {
+      // For the answer flow we keep using the canned answer-system-prompt even
+      // when a custom outline prompt was supplied — the answer shape (4-beat
+      // interruption that quotes the listener verbatim) is structural, not
+      // stylistic, and overriding it would break the listener experience.
       const sys = buildAnswerSystemPrompt(input.topic, input.style);
       // Give the model the last few segments so the answer can riff on the
       // running thread instead of feeling teleported in. Cap to keep prompt
@@ -194,7 +212,7 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
       const content = await callChat([
         { role: 'system', content: sys },
         { role: 'user', content: user },
-      ]);
+      ], input.deploymentOverride);
       return parseBeats(content);
     },
   };

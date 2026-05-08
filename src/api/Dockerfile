@@ -63,11 +63,15 @@ ENV REGISTRATION_ENABLED=true
 # See src/api/src/services/k8s-aad-credential.ts for the implementation
 # and LILIPUT_DEPLOY_CONTRACT.md for why this is baked into the image
 # rather than configured on the Deployment.
+#
+# Endpoint and deployment name point at the only Azure OpenAI account
+# visible to the dev-preview subscription (`freshbite-openai-dev`,
+# resource group `rg-freshbite-dev`, gpt-4o deployment).
 ENV LLM_PROVIDER=azure
-ENV AZURE_OPENAI_ENDPOINT=https://compy-foundry-ercqwl.cognitiveservices.azure.com
-ENV AZURE_OPENAI_DEPLOYMENT_NAME=podcast-gpt-4o-mini
+ENV AZURE_OPENAI_ENDPOINT=https://freshbite-openai-dev.openai.azure.com
+ENV AZURE_OPENAI_DEPLOYMENT_NAME=gpt-4o
 ENV AZURE_OPENAI_API_VERSION=2024-10-21
-ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o-mini (Azure OpenAI · compy-foundry)"
+ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o (Azure OpenAI · freshbite-openai-dev)"
 ENV AZURE_TENANT_ID=f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3
 ENV AZURE_OPENAI_CLIENT_ID=f14665ae-86f5-41c2-95ba-96e817132222
 
