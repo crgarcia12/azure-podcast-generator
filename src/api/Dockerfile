@@ -6,7 +6,7 @@
 # one container, fronted by a small Node proxy. See LILIPUT_DEPLOY_CONTRACT.md
 # and scripts/liliput-launcher.mjs for the why.
 
-ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-15f4165a
+ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-069d6fd4
 
 # ---------- API build ----------
 FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS api-build
