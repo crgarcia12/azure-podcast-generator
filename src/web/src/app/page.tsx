@@ -1,7 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { apiFetch, toApiUrl } from './lib/api';
+import { apiFetch, toApiUrl, ApiNetworkError } from './lib/api';
 import { useSpeechRecognition } from './lib/use-speech-recognition';
 
 type Speaker = 'host' | 'guest';
@@ -870,7 +870,20 @@ export default function Home() {
         setPhase('playing');
         openStream(data.id, 0);
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to start podcast.';
+        // Distinguish a network-layer failure (e.g. "Failed to fetch") from
+        // a server-reported error so the listener gets an actionable
+        // message and we can log enough context to debug it.
+        const message =
+          err instanceof ApiNetworkError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Failed to start podcast.';
+        if (err instanceof ApiNetworkError) {
+          console.error('[startCast] network error', { url: err.url, online: err.online, cause: err.cause });
+        } else {
+          console.error('[startCast] error', err);
+        }
         setError(message);
         setPhase('error');
       }
@@ -998,7 +1011,19 @@ export default function Home() {
         setQuestionInput('');
         setPhase('playing');
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Failed to send your question.';
+        // Same treatment as startCast — surface network errors with the
+        // attempted URL so the listener has a paste-able diagnostic.
+        const message =
+          err instanceof ApiNetworkError
+            ? err.message
+            : err instanceof Error
+              ? err.message
+              : 'Failed to send your question.';
+        if (err instanceof ApiNetworkError) {
+          console.error('[submitQuestion] network error', { url: err.url, online: err.online, cause: err.cause });
+        } else {
+          console.error('[submitQuestion] error', err);
+        }
         setError(message);
         setPhase('error');
       }
