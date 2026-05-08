@@ -68,6 +68,31 @@ describe('CORS middleware', () => {
     });
   });
 
+  it('honours X-Forwarded-Scheme=https when X-Forwarded-Proto is http (AKS nginx-ingress quirk)', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/info')
+      .set('Origin', 'https://dev.liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Host', 'dev.liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Scheme', 'https')
+      .set('X-Forwarded-Port', '443');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('https://dev.liliput.crgarcia.com.ar');
+  });
+
+  it('upgrades to https when X-Forwarded-Proto=http but X-Forwarded-Port=443 (no X-Forwarded-Scheme)', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/info')
+      .set('Origin', 'https://dev.liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Host', 'dev.liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Port', '443');
+    expect(res.status).toBe(200);
+    expect(res.headers['access-control-allow-origin']).toBe('https://dev.liliput.crgarcia.com.ar');
+  });
+
   it('falls back to Host header when X-Forwarded-Host is absent (local dev)', async () => {
     const app = createApp();
     const res = await request(app)
