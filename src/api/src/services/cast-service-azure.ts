@@ -426,7 +426,15 @@ export async function listAzureChatDeployments(opts?: {
     // (e.g. `gpt-4o-mini-tts`).
     const capChat = item.capabilities?.chat_completion;
     const looksLikeChatFamily = /^(gpt-|o1|o3|o4|chatgpt)/i.test(model);
-    const isNonChatVariant = /(-tts|-transcribe|-stt|-realtime|-audio|whisper|embedding|embed|moderation|dall-?e|davinci|babbage|curie|ada)/i.test(model);
+    // Non-chat siblings of the gpt-* family (image generation, audio TTS /
+    // STT, embeddings, moderation, completion-only legacy models). These all
+    // share the gpt-* prefix on the listing endpoint so we must exclude them
+    // explicitly — otherwise the dropdown surfaces models that 404 the
+    // moment a user picks them.
+    const isNonChatVariant =
+      /(-tts|-transcribe|-stt|-realtime|-audio|whisper|embedding|embed|moderation|dall-?e|davinci|babbage|curie|ada|^gpt-image|-image|sora|video)/i.test(
+        model,
+      );
     const chatCapable =
       capChat === true ||
       (capChat === undefined && looksLikeChatFamily && !isNonChatVariant);

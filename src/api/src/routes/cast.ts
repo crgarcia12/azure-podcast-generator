@@ -3,6 +3,9 @@ import {
   type CastService,
   CastNotFoundError,
   CastValidationError,
+  DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+  DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE,
+  buildSystemPrompt,
 } from '../services/cast-service.js';
 import { listAzureChatDeployments } from '../services/cast-service-azure.js';
 import { logger } from '../logger.js';
@@ -14,18 +17,79 @@ const FALLBACK_CHAT_MODELS = [
   { deployment: 'gpt-5-mini', model: 'gpt-5-mini', chatCapable: true },
 ] as const;
 
+// Coarse classification of an Azure OpenAI deployment by its model name.
+// Lets the UI show non-chat deployments greyed out with a clear reason
+// ("transcription only", "embeddings only") instead of just hiding them —
+// otherwise users see two models on a resource that has five deployments
+// and assume the dropdown is broken.
+function classifyDeployment(model: string): {
+  kind: 'chat' | 'transcription' | 'tts' | 'embedding' | 'image' | 'other';
+  label: string;
+} {
+  const m = model.toLowerCase();
+  if (/(whisper|-transcribe|-stt)/.test(m)) {
+    return { kind: 'transcription', label: 'speech-to-text — not for chat' };
+  }
+  if (/(-tts|-realtime|-audio)/.test(m)) {
+    return { kind: 'tts', label: 'text-to-speech — not for chat' };
+  }
+  if (/(embedding|-embed|ada-002)/.test(m)) {
+    return { kind: 'embedding', label: 'embeddings — not for chat' };
+  }
+  if (/(dall-?e|image)/.test(m)) {
+    return { kind: 'image', label: 'image generation — not for chat' };
+  }
+  if (/^(gpt-|o1|o3|o4|chatgpt)/.test(m)) {
+    return { kind: 'chat', label: 'chat completions' };
+  }
+  return { kind: 'other', label: 'unknown — not exposed for chat' };
+}
+
 export function mapCastEndpoints(app: Express, service: CastService): void {
+  // Surface the default system-prompt template so the start screen can pre-
+  // populate the "System prompt" textarea with the *current* default. Static
+  // string + small `style` clause so the client can interpolate the active
+  // topic / style without an extra round-trip per keystroke.
+  app.get('/api/cast/prompt-template', (_req: Request, res: Response) => {
+    // Also include a fully-rendered example so curl / non-JS clients see
+    // exactly what an LLM would receive.
+    const exampleTopic = 'the moon landing';
+    const exampleStyle = '';
+    res.status(200).json({
+      template: DEFAULT_SYSTEM_PROMPT_TEMPLATE,
+      styleClause: DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE,
+      placeholders: ['{{topic}}', '{{style}}', '{{styleClause}}'],
+      example: {
+        topic: exampleTopic,
+        style: exampleStyle,
+        rendered: buildSystemPrompt(exampleTopic, exampleStyle),
+      },
+    });
+  });
+
   // List the chat-capable Azure OpenAI deployments visible to this pod.
   // Used to populate the "Model" dropdown on the start screen so the
   // listener picks from real deployments instead of typing a name and
   // hoping it exists. Cached for 60s so a quick rerender doesn't hammer
   // Azure with /openai/deployments calls.
-  let cachedModels: { items: Array<{ deployment: string; model: string }>; defaultDeployment: string; expiresAt: number } | null = null;
+  let cachedModels: {
+    items: Array<{ deployment: string; model: string }>;
+    allDeployments: Array<{
+      deployment: string;
+      model: string;
+      chatCapable: boolean;
+      kind: 'chat' | 'transcription' | 'tts' | 'embedding' | 'image' | 'other';
+      reason: string;
+    }>;
+    defaultDeployment: string;
+    expiresAt: number;
+  } | null = null;
   app.get('/api/cast/models', async (_req: Request, res: Response) => {
     const now = Date.now();
     if (cachedModels && cachedModels.expiresAt > now) {
       res.status(200).json({
         models: cachedModels.items,
+        allDeployments: cachedModels.allDeployments,
         defaultDeployment: cachedModels.defaultDeployment,
         source: 'cache',
       });
@@ -33,11 +97,28 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
     }
 
     let models: Array<{ deployment: string; model: string }> = [];
+    let allDeployments: Array<{
+      deployment: string;
+      model: string;
+      chatCapable: boolean;
+      kind: 'chat' | 'transcription' | 'tts' | 'embedding' | 'image' | 'other';
+      reason: string;
+    }> = [];
     let source: 'azure' | 'fallback' = 'fallback';
     try {
       const fetched = await listAzureChatDeployments();
       if (fetched && fetched.length > 0) {
         models = fetched.filter((m) => m.chatCapable).map((m) => ({ deployment: m.deployment, model: m.model }));
+        allDeployments = fetched.map((m) => {
+          const c = classifyDeployment(m.model);
+          return {
+            deployment: m.deployment,
+            model: m.model,
+            chatCapable: m.chatCapable,
+            kind: c.kind,
+            reason: m.chatCapable ? c.label : c.label,
+          };
+        });
         source = 'azure';
       }
     } catch (err) {
@@ -48,6 +129,16 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
     }
     if (models.length === 0) {
       models = FALLBACK_CHAT_MODELS.map((m) => ({ deployment: m.deployment, model: m.model }));
+      allDeployments = FALLBACK_CHAT_MODELS.map((m) => {
+        const c = classifyDeployment(m.model);
+        return {
+          deployment: m.deployment,
+          model: m.model,
+          chatCapable: m.chatCapable,
+          kind: c.kind,
+          reason: c.label,
+        };
+      });
       source = 'fallback';
     }
     const defaultDeployment =
@@ -55,22 +146,44 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
 
     // Sort gpt-5 first, then gpt-5-mini, then the rest alphabetically — the
     // "best" model is what most users want as the default visual.
+    const rank = (n: string) => {
+      if (n === 'gpt-5') return 0;
+      if (n === 'gpt-5-mini') return 1;
+      if (/^gpt-4o/.test(n)) return 2;
+      if (/^gpt-4/.test(n)) return 3;
+      if (/^o[134]/.test(n)) return 4;
+      return 9;
+    };
     models.sort((a, b) => {
-      const rank = (n: string) => {
-        if (n === 'gpt-5') return 0;
-        if (n === 'gpt-5-mini') return 1;
-        if (/^gpt-4o/.test(n)) return 2;
-        if (/^gpt-4/.test(n)) return 3;
-        return 9;
-      };
+      const ar = rank(a.deployment);
+      const br = rank(b.deployment);
+      if (ar !== br) return ar - br;
+      return a.deployment.localeCompare(b.deployment);
+    });
+    // Same ranking for chat-capable rows; non-chat rows sink to the bottom
+    // grouped by kind so the dropdown is "chat first, then audio, then the
+    // rest" — what a listener scanning the list expects.
+    const kindRank: Record<string, number> = {
+      chat: 0,
+      transcription: 5,
+      tts: 6,
+      embedding: 7,
+      image: 8,
+      other: 9,
+    };
+    allDeployments.sort((a, b) => {
+      if (a.chatCapable !== b.chatCapable) return a.chatCapable ? -1 : 1;
+      const aKind = kindRank[a.kind] ?? 9;
+      const bKind = kindRank[b.kind] ?? 9;
+      if (aKind !== bKind) return aKind - bKind;
       const ar = rank(a.deployment);
       const br = rank(b.deployment);
       if (ar !== br) return ar - br;
       return a.deployment.localeCompare(b.deployment);
     });
 
-    cachedModels = { items: models, defaultDeployment, expiresAt: now + 60_000 };
-    res.status(200).json({ models, defaultDeployment, source });
+    cachedModels = { items: models, allDeployments, defaultDeployment, expiresAt: now + 60_000 };
+    res.status(200).json({ models, allDeployments, defaultDeployment, source });
   });
 
   // Create a new cast session for a topic. Anonymous — no auth required.

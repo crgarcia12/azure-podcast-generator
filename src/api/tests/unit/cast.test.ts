@@ -71,6 +71,104 @@ describe('cast endpoints', () => {
         if (prev !== undefined) process.env.LLM_PROVIDER = prev;
       }
     });
+
+    it('also exposes an `allDeployments` array with chatCapable + kind metadata', async () => {
+      const prev = process.env.LLM_PROVIDER;
+      delete process.env.LLM_PROVIDER;
+      try {
+        const app = createApp();
+        const res = await request(app).get('/api/cast/models');
+        expect(res.status).toBe(200);
+        expect(Array.isArray(res.body.allDeployments)).toBe(true);
+        expect(res.body.allDeployments.length).toBeGreaterThan(0);
+        for (const m of res.body.allDeployments) {
+          expect(typeof m.deployment).toBe('string');
+          expect(typeof m.model).toBe('string');
+          expect(typeof m.chatCapable).toBe('boolean');
+          expect(['chat', 'transcription', 'tts', 'embedding', 'image', 'other']).toContain(m.kind);
+          expect(typeof m.reason).toBe('string');
+        }
+        // Fallback list is chat-only — every entry must be chatCapable.
+        for (const m of res.body.allDeployments) {
+          expect(m.chatCapable).toBe(true);
+        }
+      } finally {
+        if (prev !== undefined) process.env.LLM_PROVIDER = prev;
+      }
+    });
+  });
+
+  describe('GET /api/cast/prompt-template', () => {
+    it('returns the default system-prompt template with placeholders', async () => {
+      const app = createApp();
+      const res = await request(app).get('/api/cast/prompt-template');
+      expect(res.status).toBe(200);
+      expect(typeof res.body.template).toBe('string');
+      expect(res.body.template).toContain('{{topic}}');
+      expect(res.body.template).toContain('{{styleClause}}');
+      expect(typeof res.body.styleClause).toBe('string');
+      expect(res.body.styleClause).toContain('{{style}}');
+      expect(Array.isArray(res.body.placeholders)).toBe(true);
+      expect(res.body.placeholders).toContain('{{topic}}');
+      expect(res.body.placeholders).toContain('{{style}}');
+      expect(typeof res.body.example?.rendered).toBe('string');
+      // The rendered example is a quick eyeball check that the template
+      // interpolates correctly server-side with no leftover placeholders.
+      expect(res.body.example.rendered).not.toContain('{{');
+      expect(res.body.example.rendered).toContain(res.body.example.topic);
+    });
+  });
+
+  describe('default-prompt round-trip', () => {
+    it('treats a posted-back default prompt as "no override"', async () => {
+      const app = createApp();
+      const tplRes = await request(app).get('/api/cast/prompt-template');
+      expect(tplRes.status).toBe(200);
+      const template = tplRes.body.template as string;
+      const styleClause = tplRes.body.styleClause as string;
+      const topic = 'jazz history';
+      const style = 'sleepy bedtime story';
+      const renderedDefault = template
+        .replace('{{topic}}', topic)
+        .replace('{{styleClause}}', styleClause.replace('{{style}}', style));
+
+      const create = await request(app).post('/api/cast').send({
+        topic,
+        style,
+        // Sending the rendered default verbatim should NOT mark the session
+        // as a prompt override — the server normalises this so /meta still
+        // says "(default)".
+        systemPrompt: renderedDefault,
+      });
+      expect(create.status).toBe(201);
+      const sessionId = create.body.id as string;
+
+      const meta = await request(app).get(`/api/cast/${sessionId}/meta`);
+      expect(meta.status).toBe(200);
+      expect(meta.body.systemPrompt).toBe(renderedDefault);
+      expect(meta.body.systemPromptIsOverride).toBe(false);
+    });
+
+    it('treats a *modified* default as a real override', async () => {
+      const app = createApp();
+      const tplRes = await request(app).get('/api/cast/prompt-template');
+      const template = tplRes.body.template as string;
+      const renderedDefault = template
+        .replace('{{topic}}', 'rome')
+        .replace('{{styleClause}}', '');
+      const tweaked = `${renderedDefault} Add a closing limerick.`;
+
+      const create = await request(app)
+        .post('/api/cast')
+        .send({ topic: 'rome', systemPrompt: tweaked });
+      expect(create.status).toBe(201);
+      const sessionId = create.body.id as string;
+
+      const meta = await request(app).get(`/api/cast/${sessionId}/meta`);
+      expect(meta.status).toBe(200);
+      expect(meta.body.systemPromptIsOverride).toBe(true);
+      expect(meta.body.systemPrompt).toBe(tweaked);
+    });
   });
 
   describe('POST /api/cast', () => {

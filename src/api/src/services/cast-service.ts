@@ -217,22 +217,39 @@ function trimModelOverride(raw: unknown): string {
   return trimmed;
 }
 
+// Default system-prompt template surfaced both:
+//   * to /api/cast/:id/meta after a session starts (rendered with the topic /
+//     style of that session), and
+//   * to /api/cast/prompt-template on the start screen so the listener can see
+//     the *current* default before pressing Go and edit a copy of it.
+//
+// `{{topic}}` and `{{style}}` are placeholders that buildSystemPrompt() (and
+// the equivalent client-side renderer in src/web) substitute. When `style` is
+// empty the entire `{{styleClause}}` block is dropped; that clause itself
+// contains a `{{style}}` substitution so the placeholder set is well-defined.
+export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
+  `You are scripting a two-person interview podcast about "{{topic}}".`,
+  `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
+  `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
+  `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
+  `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
+  `Keep lines drivable — no jargon dumps, no filler.{{styleClause}}`,
+].join(' ');
+
+export const DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE =
+  ` The host has asked for the following vibe: "{{style}}". Honour that vibe in pacing, vocabulary, and the angles you choose.`;
+
 // Build the would-be LLM system prompt — surfaced via /api/cast/:id/meta so
 // listeners can see exactly what's shaping the conversation. The mock provider
 // doesn't actually call an LLM today; this string is the instruction we'd send
 // if one were configured.
 export function buildSystemPrompt(topic: string, style: string): string {
-  const stylePart = style
-    ? ` The host has asked for the following vibe: "${style}". Honour that vibe in pacing, vocabulary, and the angles you choose.`
+  const styleClause = style
+    ? DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE.replace('{{style}}', style)
     : '';
-  return [
-    `You are scripting a two-person interview podcast about "${topic}".`,
-    `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
-    `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
-    `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
-    `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
-    `Keep lines drivable — no jargon dumps, no filler.${stylePart}`,
-  ].join(' ');
+  return DEFAULT_SYSTEM_PROMPT_TEMPLATE
+    .replace('{{topic}}', topic)
+    .replace('{{styleClause}}', styleClause);
 }
 
 // Lightweight style fingerprint — a few buckets that shape templated phrasing
@@ -515,8 +532,19 @@ export function createCastService(provider?: BeatProvider): CastService {
     startSession(rawTopic: string, options: StartSessionOptions = {}): CastSession {
       const topic = trimTopic(rawTopic);
       const style = trimStyle(options.style);
-      const systemPromptOverride = trimSystemPromptOverride(options.systemPrompt);
+      let systemPromptOverride = trimSystemPromptOverride(options.systemPrompt);
       const modelOverride = trimModelOverride(options.model);
+      // If the listener pasted (or kept) the rendered default verbatim, treat
+      // it as "no override" so /api/cast/:id/meta still says "(default)" and
+      // we don't pin the LLM to a frozen copy that would drift if the
+      // template gets tweaked. Compare against the provider's prompt because
+      // the provider is the source of truth for what would be sent.
+      if (systemPromptOverride) {
+        const rendered = beatProvider.buildSystemPrompt(topic, style);
+        if (systemPromptOverride === rendered) {
+          systemPromptOverride = '';
+        }
+      }
       const session: CastSession = {
         id: randomUUID(),
         topic,
