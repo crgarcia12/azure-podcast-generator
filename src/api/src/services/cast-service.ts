@@ -7,6 +7,8 @@ export interface CastSegment {
   index: number;
   speaker: Speaker;
   text: string;
+  batchSequence?: number;
+  exchangeId?: string;
 }
 
 interface PlannedBeat {
@@ -37,6 +39,15 @@ export interface CastSession {
   outlineReady: Promise<void>;
   pendingQuestions: QueuedQuestion[];
   finished: boolean;
+  targetDurationMinutes: number;
+  generatedDurationMinutes: number;
+  nextBatchSequence: number;
+  providerCallCount: number;
+  state: CastGenerationState;
+  completionReason: CastCompletionReason;
+  coveredQuestions: string[];
+  batches: CastBatch[];
+  failedSequence: number | null;
   // Internal: a promise that resolves whenever the session state changes
   // (new question, generator unblocked, etc.). Replaced after each settle.
   signal: { promise: Promise<void>; resolve: () => void };
@@ -77,6 +88,7 @@ export interface BeatProvider {
   providerName: string;
   modelDisplayName: string;
   buildOutline(topic: string, style: string): Promise<PlannedBeat[]>;
+  buildBatch?(request: CastBatchRequest): Promise<PlannedBeat[]>;
   buildAnswerBeats(input: {
     topic: string;
     style: string;
@@ -86,6 +98,54 @@ export interface BeatProvider {
   // The system prompt this provider would (or does) send to its underlying
   // LLM. Surfaced via /api/cast/:id/meta for transparency.
   buildSystemPrompt(topic: string, style: string): string;
+}
+
+export interface CastBatchRequest {
+  topic: string;
+  style: string;
+  sequence: number;
+  targetDurationMinutes: number;
+  generatedDurationMinutes: number;
+  coveredQuestions: string[];
+}
+
+export type CastGenerationState =
+  | 'generating'
+  | 'complete'
+  | 'stopped'
+  | 'failed'
+  | 'limit-reached';
+
+export type CastCompletionReason =
+  | 'target-reached'
+  | 'stopped'
+  | 'provider-limit'
+  | 'provider-failed'
+  | null;
+
+export interface CastExchange {
+  id: string;
+  order: number;
+  question: string;
+  answer: string;
+}
+
+export interface CastBatch {
+  id: string;
+  sequence: number;
+  exchanges: CastExchange[];
+  wordCount: number;
+  estimatedDurationMinutes: number;
+}
+
+export interface CastProgress {
+  generatedDurationMinutes: number;
+  targetDurationMinutes: number;
+  state: CastGenerationState;
+  completionReason: CastCompletionReason;
+  nextBatchSequence: number;
+  providerCallCount: number;
+  failedSequence: number | null;
 }
 
 export class CastValidationError extends Error {
@@ -163,10 +223,20 @@ export function buildSystemPrompt(topic: string, style: string): string {
     `You are scripting a two-person interview podcast about "${topic}".`,
     `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
     `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
-    `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
+    `Format: batches of at least 5 alternating host questions and substantive guest answers. Continue with new batches until the target duration is reached.`,
+    `Every later batch receives a compact list of covered questions. Never repeat or lightly rephrase one of those questions.`,
     `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
     `Keep lines drivable — no jargon dumps, no filler.${stylePart}`,
   ].join(' ');
+}
+
+export function normalizeQuestion(question: string): string {
+  return question
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // Lightweight style fingerprint — a few buckets that shape templated phrasing
@@ -383,6 +453,7 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
 
 export interface StartSessionOptions {
   style?: string;
+  targetDurationMinutes?: number;
 }
 
 export interface CastService {
@@ -390,6 +461,11 @@ export interface CastService {
   getSession(id: string): CastSession | undefined;
   getMeta(id: string): CastMeta | undefined;
   addQuestion(id: string, question: string): { questionId: string };
+  getProgress(id: string): CastProgress | undefined;
+  getBatch(id: string, sequence: number): CastBatch | undefined;
+  generateNextBatch(id: string): Promise<CastBatch | undefined>;
+  stopSession(id: string): CastProgress;
+  retrySession(id: string): CastProgress;
   // Async generator that yields one segment at a time, awaiting between
   // segments to emulate natural pacing and to give listeners time to ask.
   // `since` skips already-heard segments when a client reconnects (e.g. after
@@ -411,6 +487,9 @@ export function createMockBeatProvider(): BeatProvider {
     async buildOutline(topic: string, style: string): Promise<PlannedBeat[]> {
       return buildOutline(topic, style);
     },
+    async buildBatch(request: CastBatchRequest): Promise<PlannedBeat[]> {
+      return buildMockBatch(request);
+    },
     async buildAnswerBeats({ topic, style, question }) {
       return buildAnswerBeats(topic, question, style);
     },
@@ -420,9 +499,62 @@ export function createMockBeatProvider(): BeatProvider {
   };
 }
 
-export function createCastService(provider?: BeatProvider): CastService {
+export interface CastServiceOptions {
+  wordsPerMinute?: number;
+  maxProviderCalls?: number;
+}
+
+const DEFAULT_TARGET_DURATION_MINUTES = 60;
+const DEFAULT_WORDS_PER_MINUTE = 150;
+const DEFAULT_MAX_PROVIDER_CALLS = 30;
+
+function buildMockBatch(request: CastBatchRequest): PlannedBeat[] {
+  const angles = [
+    'origins and earliest conditions',
+    'decisive turning points',
+    'people whose choices shaped events',
+    'technical and practical breakthroughs',
+    'commercial and cultural consequences',
+  ];
+  return angles.map((angle, index) => {
+    const questionNumber = (request.sequence - 1) * angles.length + index + 1;
+    const questionPrefix =
+      request.sequence === 1 && index === 0 ? 'Welcome back to the show. ' : '';
+    const question = `${questionPrefix}Question ${questionNumber}: How does ${angle} deepen our understanding of ${request.topic}?`;
+    const answerSentences = Array.from(
+      { length: 5 },
+      (_, sentence) =>
+        `${request.topic} reveals ${angle} through evidence layer ${request.sequence}.${index + 1}.${sentence + 1}, connecting specific decisions, constraints, trade-offs, and long-term effects that move the discussion beyond a simple headline.`,
+    );
+    return {
+      hostLine: question,
+      guestLine: answerSentences.join(' '),
+    };
+  });
+}
+
+function countWords(beats: PlannedBeat[]): number {
+  return beats.reduce(
+    (total, beat) =>
+      total + `${beat.hostLine} ${beat.guestLine}`.trim().split(/\s+/).filter(Boolean).length,
+    0,
+  );
+}
+
+export function createCastService(
+  provider?: BeatProvider,
+  options: CastServiceOptions = {},
+): CastService {
   const sessions = new Map<string, CastSession>();
   const beatProvider: BeatProvider = provider ?? createMockBeatProvider();
+  const wordsPerMinute = Math.max(
+    1,
+    options.wordsPerMinute ?? Number(process.env.PODCAST_WORDS_PER_MINUTE || DEFAULT_WORDS_PER_MINUTE),
+  );
+  const maxProviderCalls = Math.max(
+    1,
+    options.maxProviderCalls ?? Number(process.env.PODCAST_MAX_PROVIDER_CALLS || DEFAULT_MAX_PROVIDER_CALLS),
+  );
 
   function notify(session: CastSession): void {
     const old = session.signal;
@@ -430,18 +562,124 @@ export function createCastService(provider?: BeatProvider): CastService {
     old.resolve();
   }
 
-  function nextSegmentsForBeat(session: CastSession, beat: PlannedBeat): CastSegment[] {
+  function nextSegmentsForBeat(
+    session: CastSession,
+    beat: PlannedBeat,
+    batchSequence?: number,
+    exchangeId?: string,
+  ): CastSegment[] {
     const baseIndex = session.segments.length;
     return [
-      { index: baseIndex, speaker: 'host', text: beat.hostLine },
-      { index: baseIndex + 1, speaker: 'guest', text: beat.guestLine },
+      { index: baseIndex, speaker: 'host', text: beat.hostLine, batchSequence, exchangeId },
+      { index: baseIndex + 1, speaker: 'guest', text: beat.guestLine, batchSequence, exchangeId },
     ];
+  }
+
+  function progress(session: CastSession): CastProgress {
+    return {
+      generatedDurationMinutes: session.generatedDurationMinutes,
+      targetDurationMinutes: session.targetDurationMinutes,
+      state: session.state,
+      completionReason: session.completionReason,
+      nextBatchSequence: session.nextBatchSequence,
+      providerCallCount: session.providerCallCount,
+      failedSequence: session.failedSequence,
+    };
+  }
+
+  async function generateNextBatch(session: CastSession): Promise<boolean> {
+    if (session.state !== 'generating') return false;
+    if (session.generatedDurationMinutes >= session.targetDurationMinutes) {
+      session.state = 'complete';
+      session.completionReason = 'target-reached';
+      session.finished = true;
+      return false;
+    }
+    if (session.providerCallCount >= maxProviderCalls) {
+      session.state = 'limit-reached';
+      session.completionReason = 'provider-limit';
+      session.finished = true;
+      return false;
+    }
+
+    const sequence = session.nextBatchSequence;
+    session.providerCallCount += 1;
+    let beats: PlannedBeat[];
+    try {
+      beats = beatProvider.buildBatch
+        ? await beatProvider.buildBatch({
+            topic: session.topic,
+            style: session.style,
+            sequence,
+            targetDurationMinutes: session.targetDurationMinutes,
+            generatedDurationMinutes: session.generatedDurationMinutes,
+            coveredQuestions: session.coveredQuestions.slice(-100),
+          })
+        : await beatProvider.buildOutline(session.topic, session.style);
+    } catch (error) {
+      if (sequence === 1) {
+        console.error('[cast] initial batch generation failed; falling back to template', error);
+        beats = buildOutline(session.topic, session.style);
+      } else {
+        session.state = 'failed';
+        session.completionReason = 'provider-failed';
+        session.failedSequence = sequence;
+        return false;
+      }
+    }
+
+    const covered = new Set(session.coveredQuestions.map(normalizeQuestion));
+    const distinctBeats = beats.filter((beat) => {
+      const normalized = normalizeQuestion(beat.hostLine);
+      if (!normalized || covered.has(normalized)) return false;
+      covered.add(normalized);
+      return true;
+    });
+    if (distinctBeats.length === 0) {
+      session.state = 'failed';
+      session.completionReason = 'provider-failed';
+      session.failedSequence = sequence;
+      return false;
+    }
+
+    const wordCount = countWords(distinctBeats);
+    const estimatedDurationMinutes = wordCount / wordsPerMinute;
+    const batch: CastBatch = {
+      id: `${session.id}-batch-${sequence}`,
+      sequence,
+      exchanges: distinctBeats.map((beat, order) => ({
+        id: `${session.id}-batch-${sequence}-exchange-${order}`,
+        order,
+        question: beat.hostLine,
+        answer: beat.guestLine,
+      })),
+      wordCount,
+      estimatedDurationMinutes,
+    };
+    session.batches.push(batch);
+    session.coveredQuestions.push(...distinctBeats.map((beat) => beat.hostLine));
+    session.generatedDurationMinutes += estimatedDurationMinutes;
+    session.nextBatchSequence += 1;
+    session.outline = distinctBeats;
+    session.outlineCursor = 0;
+    session.failedSequence = null;
+
+    if (!beatProvider.buildBatch) {
+      session.targetDurationMinutes = session.generatedDurationMinutes;
+    }
+    return true;
   }
 
   return {
     startSession(rawTopic: string, options: StartSessionOptions = {}): CastSession {
       const topic = trimTopic(rawTopic);
       const style = trimStyle(options.style);
+      const targetDurationMinutes =
+        typeof options.targetDurationMinutes === 'number' &&
+        Number.isFinite(options.targetDurationMinutes) &&
+        options.targetDurationMinutes > 0
+          ? Math.min(60, options.targetDurationMinutes)
+          : DEFAULT_TARGET_DURATION_MINUTES;
       const session: CastSession = {
         id: randomUUID(),
         topic,
@@ -453,21 +691,17 @@ export function createCastService(provider?: BeatProvider): CastService {
         outlineReady: Promise.resolve(),
         pendingQuestions: [],
         finished: false,
+        targetDurationMinutes,
+        generatedDurationMinutes: 0,
+        nextBatchSequence: 1,
+        providerCallCount: 0,
+        state: 'generating',
+        completionReason: null,
+        coveredQuestions: [],
+        batches: [],
+        failedSequence: null,
         signal: makeSignal(),
       };
-      // Kick off outline generation. For mock this resolves on the next tick;
-      // for Azure this awaits a chat-completion call. Errors are caught and
-      // fallback to the mock template so a transient LLM failure can never
-      // break a session.
-      session.outlineReady = (async () => {
-        try {
-          session.outline = await beatProvider.buildOutline(topic, style);
-        } catch (err) {
-          console.error('[cast] outline generation failed; falling back to template', err);
-          session.outline = buildOutline(topic, style);
-        }
-        notify(session);
-      })();
       sessions.set(session.id, session);
       return session;
     },
@@ -500,6 +734,48 @@ export function createCastService(provider?: BeatProvider): CastService {
       session.pendingQuestions.push({ id: questionId, text: question });
       notify(session);
       return { questionId };
+    },
+
+    getProgress(id: string): CastProgress | undefined {
+      const session = sessions.get(id);
+      return session ? progress(session) : undefined;
+    },
+
+    getBatch(id: string, sequence: number): CastBatch | undefined {
+      return sessions.get(id)?.batches.find((batch) => batch.sequence === sequence);
+    },
+
+    async generateNextBatch(id: string): Promise<CastBatch | undefined> {
+      const session = sessions.get(id);
+      if (!session) throw new CastNotFoundError();
+      if (session.outlineCursor < session.outline.length) {
+        return session.batches.at(-1);
+      }
+      await generateNextBatch(session);
+      return session.batches.at(-1);
+    },
+
+    stopSession(id: string): CastProgress {
+      const session = sessions.get(id);
+      if (!session) throw new CastNotFoundError();
+      session.state = 'stopped';
+      session.completionReason = 'stopped';
+      session.finished = true;
+      notify(session);
+      return progress(session);
+    },
+
+    retrySession(id: string): CastProgress {
+      const session = sessions.get(id);
+      if (!session) throw new CastNotFoundError();
+      if (session.state === 'failed') {
+        session.state = 'generating';
+        session.completionReason = null;
+        session.failedSequence = null;
+        session.finished = false;
+        notify(session);
+      }
+      return progress(session);
     },
 
     async *generateStream(
@@ -553,15 +829,18 @@ export function createCastService(provider?: BeatProvider): CastService {
           if (!beat) continue;
           beats = [beat];
         } else {
-          session.finished = true;
-          break;
+          const generated = await generateNextBatch(session);
+          if (!generated) break;
+          continue;
         }
 
         for (const beat of beats) {
           // A fresh listener question drops any remaining answer beats so the
           // new question can take over immediately.
           if (session.pendingQuestions.length > 0) break;
-          const newSegments = nextSegmentsForBeat(session, beat);
+          const batch = session.batches.at(-1);
+          const exchange = batch?.exchanges.find((candidate) => candidate.question === beat.hostLine);
+          const newSegments = nextSegmentsForBeat(session, beat, batch?.sequence, exchange?.id);
           let interrupted = false;
           for (const seg of newSegments) {
             session.segments.push(seg);
@@ -576,6 +855,14 @@ export function createCastService(provider?: BeatProvider): CastService {
             }
           }
           if (interrupted) break;
+        }
+        if (
+          session.outlineCursor >= session.outline.length &&
+          session.generatedDurationMinutes >= session.targetDurationMinutes
+        ) {
+          session.state = 'complete';
+          session.completionReason = 'target-reached';
+          session.finished = true;
         }
       }
     },

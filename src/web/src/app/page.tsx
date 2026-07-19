@@ -1,6 +1,7 @@
 'use client';
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { PodcastBatch, PodcastGenerationProgress } from '@podcraft/contracts';
 import { apiFetch, toApiUrl } from './lib/api';
 import { useSpeechRecognition } from './lib/use-speech-recognition';
 
@@ -184,6 +185,8 @@ export default function Home() {
   const [currentSegment, setCurrentSegment] = useState<CastSegment | null>(null);
   const [streamFinished, setStreamFinished] = useState(false);
   const [meta, setMeta] = useState<CastMeta | null>(null);
+  const [batches, setBatches] = useState<PodcastBatch[]>([]);
+  const [progress, setProgress] = useState<PodcastGenerationProgress | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   // Playback speed multiplier — applied on top of the per-speaker rate.
   // Restored from localStorage so the listener's preference sticks.
@@ -229,6 +232,18 @@ export default function Home() {
   const speechSupported = useMemo(
     () => typeof window !== 'undefined' && 'speechSynthesis' in window,
     [],
+  );
+  const transcript = useMemo(
+    () =>
+      [...batches]
+        .sort((left, right) => left.sequence - right.sequence)
+        .flatMap((batch) =>
+          batch.exchanges.flatMap((exchange) => [
+            { id: `${exchange.id}-host`, speaker: 'Host', text: exchange.question },
+            { id: `${exchange.id}-guest`, speaker: 'Guest', text: exchange.answer },
+          ]),
+        ),
+    [batches],
   );
 
   // Restore persisted speed + last-used style on mount.
@@ -483,6 +498,8 @@ export default function Home() {
     setTopic('');
     setTopicInput('');
     setMeta(null);
+    setBatches([]);
+    setProgress(null);
     setShowAbout(false);
     setError(null);
     setPhase('idle');
@@ -519,6 +536,27 @@ export default function Home() {
           }
           queueRef.current.push(segment);
           if (!speakingRef.current) speakNext();
+        } catch {
+          /* ignore malformed payload */
+        }
+      });
+
+      es.addEventListener('batch', (event) => {
+        try {
+          const batch = JSON.parse((event as MessageEvent).data) as PodcastBatch;
+          setBatches((current) =>
+            current.some((existing) => existing.sequence === batch.sequence)
+              ? current
+              : [...current, batch].sort((left, right) => left.sequence - right.sequence),
+          );
+        } catch {
+          /* ignore malformed payload */
+        }
+      });
+
+      es.addEventListener('progress', (event) => {
+        try {
+          setProgress(JSON.parse((event as MessageEvent).data) as PodcastGenerationProgress);
         } catch {
           /* ignore malformed payload */
         }
@@ -568,10 +606,14 @@ export default function Home() {
           provider?: string;
           modelDisplayName?: string;
           systemPrompt?: string;
+          firstBatch?: PodcastBatch;
+          progress?: PodcastGenerationProgress;
         };
         setSessionId(data.id);
         setTopic(data.topic);
         setStreamFinished(false);
+        setBatches(data.firstBatch ? [data.firstBatch] : []);
+        setProgress(data.progress ?? null);
         lastSegmentIndexRef.current = -1;
         setMeta({
           id: data.id,
@@ -652,6 +694,33 @@ export default function Home() {
     setAskMode(speechRecognitionSupportedRef.current ? 'voice' : 'text');
     setPhase('asking');
   }, [cancelSpeech, sessionId]);
+
+  const stopGeneration = useCallback(async () => {
+    if (!sessionId) return;
+    const response = await apiFetch(`/api/cast/${encodeURIComponent(sessionId)}/stop`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      setError('Unable to stop generation.');
+      return;
+    }
+    setProgress((await response.json()) as PodcastGenerationProgress);
+    closeStream();
+  }, [closeStream, sessionId]);
+
+  const retryGeneration = useCallback(async () => {
+    if (!sessionId) return;
+    const response = await apiFetch(`/api/cast/${encodeURIComponent(sessionId)}/retry`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      setError('Unable to retry generation.');
+      return;
+    }
+    setProgress((await response.json()) as PodcastGenerationProgress);
+    setStreamFinished(false);
+    openStream(sessionId, lastSegmentIndexRef.current + 1);
+  }, [openStream, sessionId]);
 
   // Ref so the closure above can read the latest support flag without
   // depending on it (avoids a re-render churn).
@@ -776,8 +845,14 @@ export default function Home() {
     ? currentSegment.speaker === 'host'
       ? `${HOST_NAME} · host`
       : `${GUEST_NAME} · guest`
-    : streamFinished
-      ? 'Episode wrapped'
+    : progress?.state === 'complete'
+      ? 'Episode complete'
+      : progress?.state === 'limit-reached'
+        ? 'Generation limit reached'
+        : progress?.state === 'stopped'
+          ? 'Stopped'
+          : streamFinished
+            ? 'Episode wrapped'
       : phase === 'starting'
         ? 'Cueing the studio…'
         : phase === 'playing'
@@ -867,6 +942,31 @@ export default function Home() {
                   vibe · {meta.style}
                 </p>
               ) : null}
+              {progress ? (
+                <div className="mx-auto mt-5 max-w-xl">
+                  <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/50">
+                    <span>
+                      {progress.state === 'generating'
+                        ? 'Generating more content…'
+                        : progress.state === 'limit-reached'
+                          ? 'Generation limit reached'
+                          : progress.state.charAt(0).toUpperCase() + progress.state.slice(1)}
+                    </span>
+                    <span>
+                      {progress.generatedDurationMinutes.toFixed(1)} / {progress.targetDurationMinutes} min
+                    </span>
+                  </div>
+                  <progress
+                    aria-label="Podcast generation progress"
+                    className="mt-2 h-2 w-full accent-fuchsia-400"
+                    max={progress.targetDurationMinutes}
+                    value={Math.min(
+                      progress.generatedDurationMinutes,
+                      progress.targetDurationMinutes,
+                    )}
+                  />
+                </div>
+              ) : null}
             </div>
             <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-white/5 px-6 py-8 backdrop-blur">
               <p className="text-xs font-semibold uppercase tracking-[0.3em] text-white/50">
@@ -916,6 +1016,24 @@ export default function Home() {
             </button>
 
             <div className="flex flex-col items-center gap-2">
+              {progress?.state === 'generating' ? (
+                <button
+                  type="button"
+                  onClick={() => void stopGeneration()}
+                  className="text-sm text-rose-200 underline-offset-4 hover:underline"
+                >
+                  Stop generation
+                </button>
+              ) : null}
+              {progress?.state === 'failed' ? (
+                <button
+                  type="button"
+                  onClick={() => void retryGeneration()}
+                  className="rounded-full bg-white px-5 py-2 text-sm font-bold text-black"
+                >
+                  Retry generation
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => setShowAbout((v) => !v)}
@@ -987,6 +1105,19 @@ export default function Home() {
                 onReset={resetVoiceOverrides}
               />
             ) : null}
+
+            <div
+              role="log"
+              aria-label="Podcast transcript"
+              className="max-h-80 w-full max-w-2xl space-y-3 overflow-y-auto rounded-2xl border border-white/10 bg-black/20 p-5 text-left"
+            >
+              {transcript.map((turn) => (
+                <p key={turn.id} className="text-sm leading-relaxed text-white/75">
+                  <strong className="mr-2 text-white">{turn.speaker}</strong>
+                  {turn.text}
+                </p>
+              ))}
+            </div>
           </section>
         ) : null}
 

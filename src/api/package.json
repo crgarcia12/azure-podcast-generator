@@ -14,6 +14,7 @@
     "test:integration": "vitest run tests/integration --reporter=dot"
   },
   "dependencies": {
+    "@podcraft/contracts": "file:../shared",
     "@azure/identity": "^4.13.1",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",

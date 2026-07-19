@@ -10,7 +10,12 @@
 // so a transient outage never breaks user sessions.
 
 import type { TokenCredential } from '@azure/core-auth';
-import type { BeatProvider, CastSegment, PlannedBeat } from './cast-service.js';
+import type {
+  BeatProvider,
+  CastBatchRequest,
+  CastSegment,
+  PlannedBeat,
+} from './cast-service.js';
 import { K8sFederatedAadCredential } from './k8s-aad-credential.js';
 
 const AZURE_COGNITIVE_SCOPE = 'https://cognitiveservices.azure.com/.default';
@@ -49,6 +54,19 @@ function buildOutlineSystemPrompt(topic: string, style: string): string {
     'Open the very first beat with "Welcome back to the show." so listeners hear a familiar handoff.',
     'Avoid generic filler. Ground every beat in the topic. Speak as if to a smart commuter listening on a drive — confident, specific, no fluff.',
     'Return ONLY a single JSON object of the form {"beats":[{"hostLine":"...","guestLine":"..."},...]} with no markdown fences and no commentary.',
+  ].filter(Boolean).join('\n');
+}
+
+function buildBatchSystemPrompt(topic: string, style: string): string {
+  const stylePart = style ? ` Honour this requested vibe: "${style}".` : '';
+  return [
+    `You are continuing a long-form interview podcast about ${topic}.`,
+    'Generate one ordered batch of 5 to 7 distinct exchanges.',
+    'Each exchange must contain one focused host question and one substantive guest answer of 4 to 7 natural sentences.',
+    'Use concrete facts, examples, consequences, and transitions suitable for spoken audio.',
+    'Never repeat or lightly rephrase any previously covered question supplied by the producer.',
+    stylePart.trim(),
+    'Return ONLY {"beats":[{"hostLine":"...","guestLine":"..."}]} as valid JSON.',
   ].filter(Boolean).join('\n');
 }
 
@@ -165,6 +183,29 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
       const content = await callChat([
         { role: 'system', content: sys },
         { role: 'user', content: user },
+      ]);
+      return parseBeats(content);
+    },
+    async buildBatch(input: CastBatchRequest): Promise<PlannedBeat[]> {
+      const covered = input.coveredQuestions.length
+        ? input.coveredQuestions.map((question, index) => `${index + 1}. ${question}`).join('\n')
+        : '(none - this is the opening batch)';
+      const content = await callChat([
+        { role: 'system', content: buildBatchSystemPrompt(input.topic, input.style) },
+        {
+          role: 'user',
+          content: [
+            `Topic: ${input.topic}`,
+            `Batch sequence: ${input.sequence}`,
+            `Target duration: ${input.targetDurationMinutes} minutes`,
+            `Generated so far: ${input.generatedDurationMinutes.toFixed(2)} minutes`,
+            '',
+            'Previously covered host questions:',
+            covered,
+            '',
+            'Generate the next non-repeating batch.',
+          ].join('\n'),
+        },
       ]);
       return parseBeats(content);
     },
