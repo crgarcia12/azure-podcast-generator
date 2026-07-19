@@ -66,7 +66,11 @@ function spawnChild(name, command, args, opts) {
   return child;
 }
 
-const NODE_BIN = process.execPath;
+// Some managed runtimes expose a virtual `process.execPath` that is valid for
+// the current process but not executable by child processes. Prefer an explicit
+// override, then resolve Node through PATH so both local previews and containers
+// can reliably start the API and web workers.
+const NODE_BIN = process.env.NODE_BINARY?.trim() || 'node';
 
 const api = spawnChild('api', NODE_BIN, ['dist/index.js'], {
   cwd: resolve(APP_ROOT, 'api'),

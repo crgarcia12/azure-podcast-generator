@@ -26,6 +26,13 @@ export interface CastSession {
   id: string;
   topic: string;
   style: string; // user-provided "vibe" hint — empty string when not supplied
+  // Optional per-session overrides set when the listener wants to tweak the
+  // brain or steer the conversation before pressing Go. Empty string ===
+  // "use the provider default".
+  systemPromptOverride: string;
+  modelOverride: string;
+  generationStatus: 'pending' | 'ai' | 'mock-fallback';
+  providerError?: string;
   createdAt: string;
   segments: CastSegment[];
   outline: PlannedBeat[];
@@ -53,6 +60,22 @@ export interface CastMeta {
   // configured. Surfacing this gives listeners full transparency into what's
   // shaping the conversation and lets them iterate on the style.
   systemPrompt: string;
+  // Whether the prompt and model above came from a per-session listener
+  // override (true) or from the provider's defaults (false). Lets the UI
+  // show "(custom)" badges so the listener knows their tweak took effect.
+  systemPromptIsOverride: boolean;
+  modelIsOverride: boolean;
+  generationStatus: CastSession['generationStatus'];
+  providerError?: string;
+}
+
+export interface CastProviderStatus {
+  configuredProvider: 'azure' | 'mock';
+  activeProvider: string;
+  modelDisplayName: string;
+  aiConfigured: boolean;
+  lastFallbackAt?: string;
+  lastFallbackReason?: string;
 }
 
 const MIN_TOPIC_LENGTH = 2;
@@ -60,6 +83,10 @@ const MAX_TOPIC_LENGTH = 200;
 const MIN_QUESTION_LENGTH = 1;
 const MAX_QUESTION_LENGTH = 400;
 const MAX_STYLE_LENGTH = 500;
+// Generous but bounded — enough room for a full multi-paragraph instruction
+// without letting a runaway client OOM the prompt-handling code path.
+const MAX_SYSTEM_PROMPT_LENGTH = 4000;
+const MAX_MODEL_NAME_LENGTH = 120;
 
 // Mid-segment pacing — gives the browser time to actually speak each segment
 // before the next one queues up, and lets a listener interrupt naturally
@@ -76,15 +103,23 @@ const MODEL_DISPLAY_NAME = 'PodCraft mock outline v2';
 export interface BeatProvider {
   providerName: string;
   modelDisplayName: string;
-  buildOutline(topic: string, style: string): Promise<PlannedBeat[]>;
+  buildOutline(input: {
+    topic: string;
+    style: string;
+    systemPromptOverride?: string;
+    deploymentOverride?: string;
+  }): Promise<PlannedBeat[]>;
   buildAnswerBeats(input: {
     topic: string;
     style: string;
     question: string;
     transcriptSoFar: CastSegment[];
+    systemPromptOverride?: string;
+    deploymentOverride?: string;
   }): Promise<PlannedBeat[]>;
   // The system prompt this provider would (or does) send to its underlying
-  // LLM. Surfaced via /api/cast/:id/meta for transparency.
+  // LLM. Surfaced via /api/cast/:id/meta for transparency. Pure function of
+  // (topic, style) — listener overrides are surfaced separately in CastMeta.
   buildSystemPrompt(topic: string, style: string): string;
 }
 
@@ -151,22 +186,86 @@ function trimStyle(raw: unknown): string {
   return trimmed;
 }
 
+// Optional listener-supplied system prompt. Preserves internal whitespace so
+// multi-paragraph prompts survive the round-trip; only trims leading/trailing
+// blanks. Empty/missing means "use the provider default".
+function trimSystemPromptOverride(raw: unknown): string {
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') {
+    throw new CastValidationError('systemPrompt must be a string');
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length > MAX_SYSTEM_PROMPT_LENGTH) {
+    throw new CastValidationError(
+      `System prompt must be at most ${MAX_SYSTEM_PROMPT_LENGTH} characters`,
+    );
+  }
+  return trimmed;
+}
+
+// Optional listener-supplied model / deployment name. The Azure provider uses
+// it to pick a different deployment for THIS session only (no global env
+// mutation). Empty/missing means "use the deployment baked into the image".
+function trimModelOverride(raw: unknown): string {
+  if (raw === undefined || raw === null) return '';
+  if (typeof raw !== 'string') {
+    throw new CastValidationError('model must be a string');
+  }
+  const trimmed = raw.trim();
+  if (!trimmed) return '';
+  if (trimmed.length > MAX_MODEL_NAME_LENGTH) {
+    throw new CastValidationError(
+      `Model must be at most ${MAX_MODEL_NAME_LENGTH} characters`,
+    );
+  }
+  // Azure deployment names allow letters, digits, dashes, underscores, periods.
+  // Reject anything with whitespace or path-like separators so the URL builder
+  // never has to think about it.
+  if (!/^[A-Za-z0-9._-]+$/.test(trimmed)) {
+    throw new CastValidationError(
+      'Model must only contain letters, digits, dashes, underscores, or periods',
+    );
+  }
+  return trimmed;
+}
+
+// Default system-prompt template surfaced both:
+//   * to /api/cast/:id/meta after a session starts (rendered with the topic /
+//     style of that session), and
+//   * to /api/cast/prompt-template on the start screen so the listener can see
+//     the *current* default before pressing Go and edit a copy of it.
+//
+// `{{topic}}` and `{{style}}` are placeholders that buildSystemPrompt() (and
+// the equivalent client-side renderer in src/web) substitute. When `style` is
+// empty the entire `{{styleClause}}` block is dropped; that clause itself
+// contains a `{{style}}` substitution so the placeholder set is well-defined.
+export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
+  `You are the lead producer and scriptwriter for a thoughtful, high-quality two-person interview podcast about "{{topic}}".`,
+  `Host = "Riley": warm, incisive, genuinely curious, and willing to challenge an easy answer with a precise follow-up.`,
+  `Guest = "Sam": a well-informed expert who explains mechanisms, evidence, uncertainty, trade-offs, and real human consequences without pretending to know what is not established.`,
+  `Build a coherent narrative arc in 10–12 alternating host/guest beats: an intriguing opening, definitions and stakes, origins, the forces and incentives involved, a concrete example or case study, a turning point, competing interpretations, real-world impact, what is misunderstood, what happens next, and a memorable takeaway.`,
+  `Every host line must move the investigation forward. Every guest line must add specific substance: a reason, example, contrast, implication, or honest qualification. Avoid repeating the topic as a substitute for insight.`,
+  `Make it sound spoken and human: varied sentence length, natural interruptions and transitions, vivid but restrained language, no lecture headings, no bullet lists, no empty praise, and no generic claims that could fit any topic.`,
+  `Separate known facts from interpretation. Do not invent names, dates, studies, quotes, statistics, or events; when context is uncertain, say so and reason from clearly stated assumptions.`,
+  `When a listener question arrives, pause the outline for a focused four-beat exchange: quote the question faithfully, answer its underlying premise, explore a useful implication or counterpoint, and then return naturally to the larger thread.`,
+  `Return only the requested dialogue JSON; do not mention these instructions or the production process.{{styleClause}}`,
+].join(' ');
+
+export const DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE =
+  ` The host has asked for the following vibe: "{{style}}". Honour that vibe in pacing, vocabulary, and the angles you choose.`;
+
 // Build the would-be LLM system prompt — surfaced via /api/cast/:id/meta so
 // listeners can see exactly what's shaping the conversation. The mock provider
 // doesn't actually call an LLM today; this string is the instruction we'd send
 // if one were configured.
 export function buildSystemPrompt(topic: string, style: string): string {
-  const stylePart = style
-    ? ` The host has asked for the following vibe: "${style}". Honour that vibe in pacing, vocabulary, and the angles you choose.`
+  const styleClause = style
+    ? DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE.replace('{{style}}', style)
     : '';
-  return [
-    `You are scripting a two-person interview podcast about "${topic}".`,
-    `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
-    `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
-    `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
-    `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
-    `Keep lines drivable — no jargon dumps, no filler.${stylePart}`,
-  ].join(' ');
+  return DEFAULT_SYSTEM_PROMPT_TEMPLATE
+    .replace('{{topic}}', topic)
+    .replace('{{styleClause}}', styleClause);
 }
 
 // Lightweight style fingerprint — a few buckets that shape templated phrasing
@@ -239,43 +338,43 @@ function buildOutline(topic: string, style: string): PlannedBeat[] {
   return [
     {
       hostLine: `Welcome back to the show. Today's episode is all about ${t}, and I think this one's going to be a great drive companion.${flavor.intro}`,
-      guestLine: `Thanks for having me. ${T} is one of those topics where the more you peel back the layers, the more interesting it gets.`,
+      guestLine: `Thanks for having me. ${T} is worth examining because the simple headline hides a set of choices, constraints, and consequences. The useful question is not just what it is, but why it took this shape.`,
     },
     {
       hostLine: `Let's start with the basics — for someone hearing about ${t} for the first time, how would you describe it?`,
-      guestLine: `At its core, ${t} is about the intersection of ideas, people, and decisions. It didn't appear out of nowhere — there's a real story behind how it took shape.`,
+      guestLine: `At its core, ${t} is a system of ideas, people, incentives, and decisions rather than a single isolated event. A good mental model is to separate what can be observed from the explanations people attach to it.`,
     },
     {
       hostLine: `Walk us through the origin. Where does the story of ${t} actually begin?`,
-      guestLine: `It starts further back than most people realise. The early conditions and the people in the room shaped almost everything that came afterwards.`,
+      guestLine: `The origin usually sits further back than the popular story suggests. Start with the conditions that made ${t} possible, then look at who had the authority, resources, or motivation to turn those conditions into action.`,
     },
     {
-      hostLine: `What were the turning points along the way?`,
-      guestLine: `There are usually two or three key moments where the trajectory could have gone in a totally different direction. Those moments are where the personalities really matter.`,
+      hostLine: `What were the turning points, and what alternatives were still open at each one?`,
+      guestLine: `The important moments are not just milestones; they are forks where a different decision could have produced a different outcome. Looking at the trade-offs makes the story more useful than simply listing what happened next.`,
     },
     {
-      hostLine: `Who are the people listeners should know about when it comes to ${t}?`,
-      guestLine: `A handful of figures stand out — some celebrated, some controversial, and a few quiet contributors who made it all possible behind the scenes.`,
+      hostLine: `Who had the most influence, including the people who do not usually get the credit?`,
+      guestLine: `Pay attention to roles as well as names: the visible decision-makers, the implementers, the critics, and the people affected by the outcome. Influence is often distributed across a group, even when the public story gives one person the credit.`,
     },
     {
-      hostLine: `Let's talk about the impact. How has ${t} changed the world around it?`,
-      guestLine: `The ripple effects are everywhere once you know what to look for — in the way we work, the products we use, even the stories we tell ourselves about progress.`,
+      hostLine: `Let's make the impact concrete. What changed for real people, institutions, or everyday decisions?`,
+      guestLine: `The best way to judge the impact of ${t} is to trace a chain: an initial choice changes a behaviour, that behaviour creates a second-order effect, and the costs or benefits land unevenly. That chain also shows where the popular narrative is too confident.`,
     },
     {
-      hostLine: `What's a common misconception about ${t} that you'd love to clear up?`,
-      guestLine: `People assume the obvious narrative is the whole story. But the reality is more nuanced — the most interesting parts are usually the ones that don't fit neatly on a slide.`,
+      hostLine: `What's the strongest criticism or misconception about ${t}, and where does it contain a grain of truth?`,
+      guestLine: `A serious critique should not be dismissed just because it is inconvenient. The most honest view usually keeps the valid concern, rejects the overstatement, and explains what evidence would change our mind.`,
     },
     {
-      hostLine: `Where is ${t} headed next? What should we be watching?`,
-      guestLine: `The next chapter is being written right now. The pace has accelerated, the players have multiplied, and the questions we're asking are getting sharper.`,
+      hostLine: `Where is ${t} headed next, and what signals would tell us that the direction is changing?`,
+      guestLine: `Rather than making a confident prediction, watch the incentives and constraints. The future turns when those change, so the most useful forecast names the signals to follow and the assumptions that could prove wrong.`,
     },
     {
       hostLine: `If a listener wanted to go deeper on ${t} after this episode, where would you point them?`,
-      guestLine: `Start with the primary sources — the original interviews, papers, or memoirs. Then triangulate with a couple of strong secondary takes. Avoid the takes that promise easy answers.`,
+      guestLine: `Start with a primary source or first-hand account, then compare it with a rigorous source that disagrees. Ask who produced each account, what evidence it uses, and what it leaves out. That habit is more valuable than a single perfect recommendation.`,
     },
     {
       hostLine: `Last one — what's the one big takeaway you want our listeners driving home today to remember about ${t}?`,
-      guestLine: `Don't accept the headline version. ${T} is a story about decisions, trade-offs, and long-term consequences — and that's exactly what makes it worth your attention.`,
+      guestLine: `Do not settle for the headline version. ${T} is a story about decisions under constraints, trade-offs that affect different people differently, and consequences that arrive later than the original choice.`,
     },
     {
       hostLine: `Beautifully put. Thanks so much for joining us today — that was a fantastic deep-dive on ${t}.${flavor.closer}`,
@@ -322,42 +421,42 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
   const setupGuest = (() => {
     switch (kind) {
       case 'why':
-        return `That cuts right to the heart of ${topic}. The "why" sits at the intersection of motivation, opportunity, and timing — and ignoring any of those misses the real story.`;
+        return `To answer the "why" behind ${topic}, separate three layers: the conditions that made the outcome possible, the incentives that made it attractive, and the decisions that turned possibility into action. Those layers can point in different directions, so we should not collapse them into one cause.`;
       case 'how':
-        return `Great mechanics question. The "how" of ${topic} is where the abstract stuff hits the ground — there are concrete steps, decisions, and trade-offs that most takes skip over entirely.`;
+        return `The "how" of ${topic} is a sequence, not a single move. We can follow the inputs, decisions, constraints, and feedback at each stage, then distinguish what is directly observable from what we are inferring.`;
       case 'what':
-        return `Definitions matter here, especially with ${topic} — different camps mean different things by the same words, and that's where a surprising amount of the disagreement actually lives.`;
+        return `Before answering what ${topic} is, define the boundary: what belongs inside the idea, what does not, and which related terms are being confused with it. That distinction determines which evidence and consequences are relevant.`;
       case 'when':
-        return `Chronology is more important here than people realise. The timing of ${topic} is part of why it had the impact it did.`;
+        return `For the timing of ${topic}, build a short chain rather than naming one magic date: identify the prior conditions, the trigger, and the moment when the available choices changed. That keeps chronology connected to cause without pretending that sequence alone proves causation.`;
       case 'who':
-        return `The cast of characters around ${topic} is genuinely fascinating — there are obvious names, and then a few quiet protagonists most people have never heard of.`;
+        return `The people around ${topic} should be mapped by role: who decided, who carried it out, who challenged it, and who absorbed the consequences. That avoids turning a distributed process into a hero story built around whichever name is easiest to remember.`;
       case 'where':
-        return `Geography matters more in ${topic} than people give it credit for — the place shapes the conditions, and the conditions shape what's possible.`;
+        return `Place matters to ${topic} when it changes the available resources, rules, relationships, or risks. We should name which of those conditions matter instead of treating geography as atmosphere.`;
       case 'yesno':
-        return `Short answer is "it depends" — long answer is where ${topic} gets interesting. There's a yes-version and a no-version, and the difference between them tells you what the real question is.`;
+        return `The honest answer is conditional rather than a reflexive yes or no. For ${topic}, state the condition that makes the answer yes, the condition that makes it no, and the observable difference between those two cases.`;
       default:
-        return `That's a really good angle on ${topic}. Most people don't ask it that way, and it cuts straight to the part of the story that's usually glossed over.`;
+        return `The useful way into ${topic} is to turn the question into claims we can examine: what would have to be true, what evidence would support it, and which consequence would distinguish it from an alternative explanation.`;
     }
   })();
 
   const meatGuest = (() => {
     switch (kind) {
       case 'why':
-        return `The "why" comes down to two things: the conditions that made ${topic} possible at that particular moment, and the people who saw the opening. Strip away either and you don't get the same outcome.`;
+        return `For "${trimmed}", compare the strongest plausible causes instead of choosing the first satisfying story. Ask which conditions were necessary, which merely helped, and what would have happened if one of them had been absent.`;
       case 'how':
-        return `Step one is recognising that ${topic} doesn't happen in a single move — it's a sequence. Step two: each step depends on the previous one in ways that aren't obvious until you're inside it. That's why the "how" gets misread so often.`;
+        return `For "${trimmed}", trace the sequence from starting condition to outcome and mark each decision point. The important detail is where a constraint or trade-off narrowed the next choice; that is usually more explanatory than a list of milestones.`;
       case 'what':
-        return `Strip ${topic} down to its atomic elements and you get something simpler than the usual narrative suggests — but the simple version is the powerful one. Once you see it, you can't unsee how it shapes everything downstream.`;
+        return `For "${trimmed}", use a working definition and test its edges. Explain the smallest example that fits, the closest example that does not, and what changes when the definition is widened or narrowed.`;
       case 'when':
-        return `The window mattered enormously. Earlier, ${topic} would have been impossible. Later, the moment would have passed. The timing wasn't accidental — it was the product of decades of pressure finally finding a release valve.`;
+        return `For "${trimmed}", distinguish the date an event became visible from the conditions that made it possible. A careful answer names the timing evidence and leaves room for multiple contributing causes.`;
       case 'who':
-        return `Three names you should know, and probably don't all of them. Each made a choice the others didn't see coming, and the combination of those choices is what made ${topic} what it became.`;
+        return `For "${trimmed}", follow decisions and consequences rather than inventing a list of famous names. The answer should identify the relevant roles, explain how they interacted, and acknowledge whose perspective is missing.`;
       case 'where':
-        return `The setting did most of the heavy lifting people credit to the personalities. ${topic} couldn't have unfolded the same way anywhere else — the local conditions selected for exactly the kind of approach that ended up working.`;
+        return `For "${trimmed}", compare the relevant conditions in the place being discussed with a plausible alternative. That counterfactual reveals whether location is a mechanism, a constraint, or merely part of the story's setting.`;
       case 'yesno':
-        return `Honest answer: yes and no, and the difference between yes and no is where ${topic} stops being a trivia question and starts being a genuinely useful framework. Most people stop at the headline; the real value is one layer down.`;
+        return `For "${trimmed}", give the shortest defensible answer first, then state the condition that limits it. If the available context cannot establish the claim, say what additional evidence would settle it instead of filling the gap with confidence.`;
       default:
-        return `The core of "${trimmed}" is something a lot of people get wrong about ${topic}. Conventional wisdom says one thing, but if you actually trace the evidence, you end up somewhere more nuanced — and frankly more useful.`;
+        return `For "${trimmed}", lay out the main explanation, its strongest alternative, and the observation that would separate them. That gives the listener a way to reason about ${topic} rather than handing them an unsupported conclusion.`;
     }
   })();
 
@@ -371,8 +470,8 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
       guestLine: meatGuest,
     },
     {
-      hostLine: `That's a much richer answer than the one-liner I was expecting. Anything you'd add for someone who really wants to sit with that question?`,
-      guestLine: `Just that ${topic} rewards patience here — the deeper you go on "${trimmed}", the more the surface answer falls apart in interesting ways. And the listener who asked clearly already senses that.`,
+      hostLine: `What would change your answer, and what should a listener watch for as they explore "${trimmed}" further?`,
+      guestLine: `The answer should change when better evidence changes the mechanism or the comparison. For ${topic}, keep the claim proportionate to what is known, record the uncertainty, and follow the consequence that matters most to the people affected.`,
     },
     {
       hostLine: `Beautifully said. Listener, thanks for that one — it pushed the conversation somewhere good. Now, picking up where we left off…`,
@@ -383,12 +482,18 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
 
 export interface StartSessionOptions {
   style?: string;
+  // Listener-supplied per-session overrides — see trimSystemPromptOverride /
+  // trimModelOverride for validation rules. Omit / empty string === "use
+  // the provider default for this run".
+  systemPrompt?: string;
+  model?: string;
 }
 
 export interface CastService {
   startSession(topic: string, options?: StartSessionOptions): CastSession;
   getSession(id: string): CastSession | undefined;
   getMeta(id: string): CastMeta | undefined;
+  getProviderStatus(): CastProviderStatus;
   addQuestion(id: string, question: string): { questionId: string };
   // Async generator that yields one segment at a time, awaiting between
   // segments to emulate natural pacing and to give listeners time to ask.
@@ -408,7 +513,9 @@ export function createMockBeatProvider(): BeatProvider {
   return {
     providerName: PROVIDER_NAME,
     modelDisplayName: MODEL_DISPLAY_NAME,
-    async buildOutline(topic: string, style: string): Promise<PlannedBeat[]> {
+    async buildOutline({ topic, style }): Promise<PlannedBeat[]> {
+      // Mock provider ignores systemPromptOverride / deploymentOverride — it
+      // doesn't talk to an LLM, so a custom prompt has nothing to act on.
       return buildOutline(topic, style);
     },
     async buildAnswerBeats({ topic, style, question }) {
@@ -423,6 +530,8 @@ export function createMockBeatProvider(): BeatProvider {
 export function createCastService(provider?: BeatProvider): CastService {
   const sessions = new Map<string, CastSession>();
   const beatProvider: BeatProvider = provider ?? createMockBeatProvider();
+  let lastFallbackAt: string | undefined;
+  let lastFallbackReason: string | undefined;
 
   function notify(session: CastSession): void {
     const old = session.signal;
@@ -442,10 +551,26 @@ export function createCastService(provider?: BeatProvider): CastService {
     startSession(rawTopic: string, options: StartSessionOptions = {}): CastSession {
       const topic = trimTopic(rawTopic);
       const style = trimStyle(options.style);
+      let systemPromptOverride = trimSystemPromptOverride(options.systemPrompt);
+      const modelOverride = trimModelOverride(options.model);
+      // If the listener pasted (or kept) the rendered default verbatim, treat
+      // it as "no override" so /api/cast/:id/meta still says "(default)" and
+      // we don't pin the LLM to a frozen copy that would drift if the
+      // template gets tweaked. Compare against the provider's prompt because
+      // the provider is the source of truth for what would be sent.
+      if (systemPromptOverride) {
+        const rendered = beatProvider.buildSystemPrompt(topic, style);
+        if (systemPromptOverride === rendered) {
+          systemPromptOverride = '';
+        }
+      }
       const session: CastSession = {
         id: randomUUID(),
         topic,
         style,
+        systemPromptOverride,
+        modelOverride,
+        generationStatus: 'pending',
         createdAt: new Date().toISOString(),
         segments: [],
         outline: [],
@@ -461,10 +586,23 @@ export function createCastService(provider?: BeatProvider): CastService {
       // break a session.
       session.outlineReady = (async () => {
         try {
-          session.outline = await beatProvider.buildOutline(topic, style);
+          session.outline = await beatProvider.buildOutline({
+            topic,
+            style,
+            systemPromptOverride: systemPromptOverride || undefined,
+            deploymentOverride: modelOverride || undefined,
+          });
         } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          session.generationStatus = 'mock-fallback';
+          session.providerError = reason;
+          lastFallbackAt = new Date().toISOString();
+          lastFallbackReason = reason;
           console.error('[cast] outline generation failed; falling back to template', err);
           session.outline = buildOutline(topic, style);
+        }
+        if (session.generationStatus === 'pending') {
+          session.generationStatus = beatProvider.providerName === 'azure-openai' ? 'ai' : 'mock-fallback';
         }
         notify(session);
       })();
@@ -479,14 +617,37 @@ export function createCastService(provider?: BeatProvider): CastService {
     getMeta(id: string): CastMeta | undefined {
       const session = sessions.get(id);
       if (!session) return undefined;
+      const baseSystemPrompt = beatProvider.buildSystemPrompt(session.topic, session.style);
+      // When the listener pinned a custom prompt or model for this session we
+      // surface the OVERRIDE in the meta — that's what's actually being sent to
+      // the LLM, and it's what the listener wants to see in "About this episode".
+      const effectivePrompt = session.systemPromptOverride || baseSystemPrompt;
+      const effectiveModel = session.modelOverride
+        ? `${session.modelOverride} (override)`
+        : beatProvider.modelDisplayName;
       return {
         id: session.id,
         topic: session.topic,
         style: session.style,
         createdAt: session.createdAt,
         provider: beatProvider.providerName,
+        modelDisplayName: effectiveModel,
+        systemPrompt: effectivePrompt,
+        systemPromptIsOverride: Boolean(session.systemPromptOverride),
+        modelIsOverride: Boolean(session.modelOverride),
+        generationStatus: session.generationStatus,
+        providerError: session.providerError,
+      };
+    },
+
+    getProviderStatus(): CastProviderStatus {
+      return {
+        configuredProvider: beatProvider.providerName === 'azure-openai' ? 'azure' : 'mock',
+        activeProvider: beatProvider.providerName,
         modelDisplayName: beatProvider.modelDisplayName,
-        systemPrompt: beatProvider.buildSystemPrompt(session.topic, session.style),
+        aiConfigured: beatProvider.providerName === 'azure-openai',
+        lastFallbackAt,
+        lastFallbackReason,
       };
     },
 
@@ -542,8 +703,15 @@ export function createCastService(provider?: BeatProvider): CastService {
               style: session.style,
               question: q.text,
               transcriptSoFar: session.segments.slice(),
+              systemPromptOverride: session.systemPromptOverride || undefined,
+              deploymentOverride: session.modelOverride || undefined,
             });
           } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            session.generationStatus = 'mock-fallback';
+            session.providerError = reason;
+            lastFallbackAt = new Date().toISOString();
+            lastFallbackReason = reason;
             console.error('[cast] answer-beat generation failed; using template', err);
             beats = buildAnswerBeats(session.topic, q.text, session.style);
           }
@@ -591,4 +759,11 @@ async function pace(abort: AbortSignal): Promise<void> {
   }
 }
 
-export const __testing = { trimTopic, trimQuestion, trimStyle, classifyStyle };
+export const __testing = {
+  trimTopic,
+  trimQuestion,
+  trimStyle,
+  trimSystemPromptOverride,
+  trimModelOverride,
+  classifyStyle,
+};

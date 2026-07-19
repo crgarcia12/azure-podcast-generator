@@ -41,7 +41,15 @@ function getConfiguredAllowedOrigins(): string[] {
 // Reconstruct the same-origin URL the browser sees, using the first hop's
 // X-Forwarded-Host / X-Forwarded-Proto headers that the reverse proxy sets.
 // Falls back to the Host header when running locally without a proxy.
-// Returns null when neither is present.
+//
+// Some ingress controllers (notably nginx-ingress in front of AKS) populate
+// `X-Forwarded-Proto` with the scheme of the *internal* hop (often `http`)
+// while exposing the original public scheme on `X-Forwarded-Scheme` /
+// `X-Scheme`, with `X-Forwarded-Port` reflecting the real public port.
+// Honour those alternates so that the same-origin check still matches the
+// browser's `Origin: https://...` when the public URL was HTTPS.
+//
+// Returns null when neither host source is present.
 function getRequestSameOrigin(req: Request): string | null {
   const forwardedHost = req.headers['x-forwarded-host'];
   const rawHost =
@@ -50,12 +58,36 @@ function getRequestSameOrigin(req: Request): string | null {
   if (!host) {
     return null;
   }
-  const forwardedProto = req.headers['x-forwarded-proto'];
-  const rawProto =
-    (typeof forwardedProto === 'string' ? forwardedProto : forwardedProto?.[0]) ??
-    (req.secure ? 'https' : 'http');
-  const proto = String(rawProto).split(',')[0]?.trim().toLowerCase() || 'http';
+  const proto = resolveForwardedProto(req);
   return `${proto}://${host}`;
+}
+
+function pickHeaderValue(req: Request, name: string): string | undefined {
+  const raw = req.headers[name];
+  const value = typeof raw === 'string' ? raw : raw?.[0];
+  return value ? String(value).split(',')[0]?.trim() : undefined;
+}
+
+// Pick the proto the *browser* used to reach the edge. Prefer headers that
+// reflect the public scheme over X-Forwarded-Proto, which some proxies fill
+// with the (internal) request scheme to the next hop.
+function resolveForwardedProto(req: Request): string {
+  for (const header of ['x-forwarded-scheme', 'x-scheme', 'x-forwarded-proto']) {
+    const value = pickHeaderValue(req, header)?.toLowerCase();
+    if (value === 'https' || value === 'http') {
+      // X-Forwarded-Port wins when X-Forwarded-Proto disagrees with it: a
+      // public 443 with proto=http is the smoking gun of the AKS nginx-ingress
+      // bug that bites browsers behind https.
+      if (header === 'x-forwarded-proto' && value === 'http') {
+        const port = pickHeaderValue(req, 'x-forwarded-port');
+        if (port === '443') {
+          return 'https';
+        }
+      }
+      return value;
+    }
+  }
+  return req.secure ? 'https' : 'http';
 }
 
 function seedConfiguredAdminUser(): void {
