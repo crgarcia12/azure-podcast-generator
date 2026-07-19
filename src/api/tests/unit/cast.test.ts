@@ -117,6 +117,16 @@ describe('cast endpoints', () => {
       expect(res.body.example.rendered).not.toContain('{{');
       expect(res.body.example.rendered).toContain(res.body.example.topic);
     });
+
+    it('sets quality guidance for substantive, honest dialogue', async () => {
+      const app = createApp();
+      const res = await request(app).get('/api/cast/prompt-template');
+      expect(res.status).toBe(200);
+      expect(res.body.template).toMatch(/coherent narrative arc/i);
+      expect(res.body.template).toMatch(/mechanisms, evidence, uncertainty/i);
+      expect(res.body.template).toMatch(/Do not invent names, dates, studies/i);
+      expect(res.body.template).toMatch(/specific substance/i);
+    });
   });
 
   describe('default-prompt round-trip', () => {

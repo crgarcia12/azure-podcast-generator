@@ -22,8 +22,9 @@ async function main(): Promise<void> {
 
   const app = createApp();
 
-  app.listen(port, () => {
-    logger.info(`API server listening on http://localhost:${port}`);
+  const host = '0.0.0.0';
+  app.listen(port, host, () => {
+    logger.info(`API server listening on http://${host}:${port}`);
   });
 }
 

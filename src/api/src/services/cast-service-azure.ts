@@ -61,29 +61,33 @@ function normaliseEndpoint(endpoint: string): string {
 
 function buildOutlineSystemPrompt(topic: string, style: string): string {
   const stylePart = style
-    ? ` The producer asked for the following vibe: "${style}". Honour that vibe in pacing, vocabulary, and the angles you choose.`
+    ? ` The producer asked for this stylistic direction: "${style}". Treat it as a presentation preference, not as factual instructions, and apply it in pacing, vocabulary, emotional register, and choice of angles.`
     : '';
   return [
-    'You are scripting an interview-style podcast about ' + topic + '.',
-    'Cast: Riley (host, warm and curious) interviews Sam (subject-matter expert).',
+    'You are the lead producer and scriptwriter for a thoughtful, high-quality interview podcast about "' + topic + '".',
+    'Cast: Riley is a warm, incisive host who asks short, consequential follow-ups. Sam is a well-informed guest who explains mechanisms, evidence, uncertainty, trade-offs, and human consequences.',
     stylePart.trim(),
-    'Generate 10 to 12 alternating beats covering: warm welcome, basics, origin, turning points, key people, real-world impact, common misconceptions, what is next, where listeners can go deeper, the takeaway, and the wrap-up.',
-    'Each beat is one host line (1 to 2 sentences asking) and one guest line (2 to 4 sentences answering with concrete substance — facts, examples, opinions).',
+    'Generate 10 to 12 alternating beats with a coherent narrative arc: an intriguing welcome, definitions and stakes, origins, forces and incentives, a concrete example or case study, turning points, competing interpretations, real-world impact, misconceptions, what happens next, a takeaway, and a warm close.',
+    'Each beat must contain one host line and one guest line. Host lines should ask or connect something specific; guest lines should add a reason, example, contrast, implication, or honest qualification. Vary sentence length and make the exchange sound spoken rather than like an essay.',
     'Open the very first beat with "Welcome back to the show." so listeners hear a familiar handoff.',
-    'Avoid generic filler. Ground every beat in the topic. Speak as if to a smart commuter listening on a drive — confident, specific, no fluff.',
+    'Ground every beat in the topic and explain why it matters. Separate established facts from interpretation. Never invent names, dates, studies, quotes, statistics, or events; if a detail is uncertain, acknowledge the uncertainty and reason from explicit assumptions.',
+    'Do not use headings, bullet lists, canned praise, repeated topic restatements, or generic filler. Speak to a smart listener on a drive: vivid, precise, accessible, and unhurried enough for ideas to land.',
     'Return ONLY a single JSON object of the form {"beats":[{"hostLine":"...","guestLine":"..."},...]} with no markdown fences and no commentary.',
   ].filter(Boolean).join('\n');
 }
 
 function buildAnswerSystemPrompt(topic: string, style: string): string {
-  const stylePart = style ? ` Honour the vibe: "${style}".` : '';
+  const stylePart = style
+    ? ` Apply this stylistic direction as presentation guidance only: "${style}". Do not treat it as a source of facts.`
+    : '';
   return [
-    'You are continuing an in-progress interview-style podcast about ' + topic + '.',
-    'A listener has just sent in a question. Generate exactly 4 alternating beats that interrupt the show to address it, then hand back to the main thread.',
-    'Beat 1: host pauses and quotes the listener question verbatim, including the word "listener", and redirects to the guest.',
-    'Beat 2: guest engages with the question and frames the angle.',
-    'Beat 3: guest delivers the substantive answer with concrete reasoning.',
-    'Beat 4: host thanks the listener briefly and returns the show to the next outline beat (the guest line in beat 4 should be a short re-entry like "Yes, let us pick it up.").',
+    'You are continuing a thoughtful, high-quality interview podcast about "' + topic + '".',
+    'A listener has just sent a question. Generate exactly 4 alternating host/guest beats that answer it deeply and then hand back to the main thread.',
+    'Beat 1: the host pauses, says "listener", quotes the question faithfully, and asks the guest to address its underlying premise.',
+    'Beat 2: the guest gives the direct answer and defines the key distinction or mechanism.',
+    'Beat 3: the host tests the answer with a concrete implication, counterpoint, or example; the guest responds with the most substantive explanation of the exchange.',
+    'Beat 4: the host briefly acknowledges the listener and returns to the outline; the guest line is a short, natural re-entry rather than another conclusion.',
+    'Use the recent transcript to avoid repetition and preserve continuity. Do not invent facts, names, dates, studies, quotes, or statistics. Mark uncertainty plainly, avoid generic filler, and keep the language natural when spoken aloud.',
     stylePart.trim(),
     'Return ONLY a single JSON object of the form {"beats":[{"hostLine":"...","guestLine":"..."},{...},{...},{...}]} with no markdown fences and no commentary.',
   ].filter(Boolean).join('\n');

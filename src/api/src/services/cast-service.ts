@@ -228,12 +228,15 @@ function trimModelOverride(raw: unknown): string {
 // empty the entire `{{styleClause}}` block is dropped; that clause itself
 // contains a `{{style}}` substitution so the placeholder set is well-defined.
 export const DEFAULT_SYSTEM_PROMPT_TEMPLATE = [
-  `You are scripting a two-person interview podcast about "{{topic}}".`,
-  `Host = "Riley" (curious, warm, paces the conversation with short connective questions).`,
-  `Guest = "Sam" (subject-matter expert, gives substantive 1–3 sentence answers).`,
-  `Format: alternating host / guest lines, ~10 beats covering origin, turning points, key people, impact, misconceptions, what's next, and a takeaway.`,
-  `When a listener question arrives, interrupt the outline with a 3-beat answer that quotes the question verbatim and pulls back into the thread afterwards.`,
-  `Keep lines drivable — no jargon dumps, no filler.{{styleClause}}`,
+  `You are the lead producer and scriptwriter for a thoughtful, high-quality two-person interview podcast about "{{topic}}".`,
+  `Host = "Riley": warm, incisive, genuinely curious, and willing to challenge an easy answer with a precise follow-up.`,
+  `Guest = "Sam": a well-informed expert who explains mechanisms, evidence, uncertainty, trade-offs, and real human consequences without pretending to know what is not established.`,
+  `Build a coherent narrative arc in 10–12 alternating host/guest beats: an intriguing opening, definitions and stakes, origins, the forces and incentives involved, a concrete example or case study, a turning point, competing interpretations, real-world impact, what is misunderstood, what happens next, and a memorable takeaway.`,
+  `Every host line must move the investigation forward. Every guest line must add specific substance: a reason, example, contrast, implication, or honest qualification. Avoid repeating the topic as a substitute for insight.`,
+  `Make it sound spoken and human: varied sentence length, natural interruptions and transitions, vivid but restrained language, no lecture headings, no bullet lists, no empty praise, and no generic claims that could fit any topic.`,
+  `Separate known facts from interpretation. Do not invent names, dates, studies, quotes, statistics, or events; when context is uncertain, say so and reason from clearly stated assumptions.`,
+  `When a listener question arrives, pause the outline for a focused four-beat exchange: quote the question faithfully, answer its underlying premise, explore a useful implication or counterpoint, and then return naturally to the larger thread.`,
+  `Return only the requested dialogue JSON; do not mention these instructions or the production process.{{styleClause}}`,
 ].join(' ');
 
 export const DEFAULT_SYSTEM_PROMPT_STYLE_CLAUSE =
@@ -322,43 +325,43 @@ function buildOutline(topic: string, style: string): PlannedBeat[] {
   return [
     {
       hostLine: `Welcome back to the show. Today's episode is all about ${t}, and I think this one's going to be a great drive companion.${flavor.intro}`,
-      guestLine: `Thanks for having me. ${T} is one of those topics where the more you peel back the layers, the more interesting it gets.`,
+      guestLine: `Thanks for having me. ${T} is worth examining because the simple headline hides a set of choices, constraints, and consequences. The useful question is not just what it is, but why it took this shape.`,
     },
     {
       hostLine: `Let's start with the basics — for someone hearing about ${t} for the first time, how would you describe it?`,
-      guestLine: `At its core, ${t} is about the intersection of ideas, people, and decisions. It didn't appear out of nowhere — there's a real story behind how it took shape.`,
+      guestLine: `At its core, ${t} is a system of ideas, people, incentives, and decisions rather than a single isolated event. A good mental model is to separate what can be observed from the explanations people attach to it.`,
     },
     {
       hostLine: `Walk us through the origin. Where does the story of ${t} actually begin?`,
-      guestLine: `It starts further back than most people realise. The early conditions and the people in the room shaped almost everything that came afterwards.`,
+      guestLine: `The origin usually sits further back than the popular story suggests. Start with the conditions that made ${t} possible, then look at who had the authority, resources, or motivation to turn those conditions into action.`,
     },
     {
-      hostLine: `What were the turning points along the way?`,
-      guestLine: `There are usually two or three key moments where the trajectory could have gone in a totally different direction. Those moments are where the personalities really matter.`,
+      hostLine: `What were the turning points, and what alternatives were still open at each one?`,
+      guestLine: `The important moments are not just milestones; they are forks where a different decision could have produced a different outcome. Looking at the trade-offs makes the story more useful than simply listing what happened next.`,
     },
     {
-      hostLine: `Who are the people listeners should know about when it comes to ${t}?`,
-      guestLine: `A handful of figures stand out — some celebrated, some controversial, and a few quiet contributors who made it all possible behind the scenes.`,
+      hostLine: `Who had the most influence, including the people who do not usually get the credit?`,
+      guestLine: `Pay attention to roles as well as names: the visible decision-makers, the implementers, the critics, and the people affected by the outcome. Influence is often distributed across a group, even when the public story gives one person the credit.`,
     },
     {
-      hostLine: `Let's talk about the impact. How has ${t} changed the world around it?`,
-      guestLine: `The ripple effects are everywhere once you know what to look for — in the way we work, the products we use, even the stories we tell ourselves about progress.`,
+      hostLine: `Let's make the impact concrete. What changed for real people, institutions, or everyday decisions?`,
+      guestLine: `The best way to judge the impact of ${t} is to trace a chain: an initial choice changes a behaviour, that behaviour creates a second-order effect, and the costs or benefits land unevenly. That chain also shows where the popular narrative is too confident.`,
     },
     {
-      hostLine: `What's a common misconception about ${t} that you'd love to clear up?`,
-      guestLine: `People assume the obvious narrative is the whole story. But the reality is more nuanced — the most interesting parts are usually the ones that don't fit neatly on a slide.`,
+      hostLine: `What's the strongest criticism or misconception about ${t}, and where does it contain a grain of truth?`,
+      guestLine: `A serious critique should not be dismissed just because it is inconvenient. The most honest view usually keeps the valid concern, rejects the overstatement, and explains what evidence would change our mind.`,
     },
     {
-      hostLine: `Where is ${t} headed next? What should we be watching?`,
-      guestLine: `The next chapter is being written right now. The pace has accelerated, the players have multiplied, and the questions we're asking are getting sharper.`,
+      hostLine: `Where is ${t} headed next, and what signals would tell us that the direction is changing?`,
+      guestLine: `Rather than making a confident prediction, watch the incentives and constraints. The future turns when those change, so the most useful forecast names the signals to follow and the assumptions that could prove wrong.`,
     },
     {
       hostLine: `If a listener wanted to go deeper on ${t} after this episode, where would you point them?`,
-      guestLine: `Start with the primary sources — the original interviews, papers, or memoirs. Then triangulate with a couple of strong secondary takes. Avoid the takes that promise easy answers.`,
+      guestLine: `Start with a primary source or first-hand account, then compare it with a rigorous source that disagrees. Ask who produced each account, what evidence it uses, and what it leaves out. That habit is more valuable than a single perfect recommendation.`,
     },
     {
       hostLine: `Last one — what's the one big takeaway you want our listeners driving home today to remember about ${t}?`,
-      guestLine: `Don't accept the headline version. ${T} is a story about decisions, trade-offs, and long-term consequences — and that's exactly what makes it worth your attention.`,
+      guestLine: `Do not settle for the headline version. ${T} is a story about decisions under constraints, trade-offs that affect different people differently, and consequences that arrive later than the original choice.`,
     },
     {
       hostLine: `Beautifully put. Thanks so much for joining us today — that was a fantastic deep-dive on ${t}.${flavor.closer}`,
