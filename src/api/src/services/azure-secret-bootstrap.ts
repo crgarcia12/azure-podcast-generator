@@ -16,6 +16,7 @@
 //   AZURE_CLIENT_SECRET
 //   AZURE_OPENAI_ENDPOINT
 //   AZURE_AI_FOUNDRY_ENDPOINT
+//   AZURE_OPENAI_API_KEY
 //
 // Behaviour:
 //   * If the Secret can't be read (ENOENT, 403, 404, etc.) we log a warn
@@ -43,6 +44,7 @@ const PROJECTED_KEYS = [
   'AZURE_CLIENT_SECRET',
   'AZURE_OPENAI_ENDPOINT',
   'AZURE_AI_FOUNDRY_ENDPOINT',
+  'AZURE_OPENAI_API_KEY',
 ] as const;
 
 interface BootstrapOptions {
@@ -71,7 +73,9 @@ interface BootstrapResult {
 }
 
 function alreadyHaveAllKeys(): boolean {
-  return PROJECTED_KEYS.every((k) => Boolean(process.env[k]?.trim()));
+  return PROJECTED_KEYS.filter((k) => k !== 'AZURE_OPENAI_API_KEY').every((k) =>
+    Boolean(process.env[k]?.trim()),
+  );
 }
 
 async function fetchSecretViaK8sApi(input: {

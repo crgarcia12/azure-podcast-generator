@@ -43,6 +43,7 @@ interface AzureBeatProviderConfig {
   deploymentName: string;
   apiVersion?: string;
   credential: TokenCredential;
+  apiKey?: string;
   modelDisplayName?: string;
   // Allow tests to inject a fake fetch.
   fetchImpl?: typeof fetch;
@@ -146,8 +147,10 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
     messages: Array<{ role: string; content: string }>,
     deploymentOverride?: string,
   ): Promise<string> {
-    const accessToken = await config.credential.getToken(AZURE_COGNITIVE_SCOPE);
-    if (!accessToken) {
+    const accessToken = config.apiKey
+      ? null
+      : await config.credential.getToken(AZURE_COGNITIVE_SCOPE);
+    if (!config.apiKey && !accessToken) {
       throw new Error('Azure credential returned no access token');
     }
     // Per-session deployment override lets a listener target a different
@@ -188,7 +191,9 @@ export function createAzureBeatProvider(config: AzureBeatProviderConfig): BeatPr
     const response = await fetchImpl(targetUrl, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${accessToken.token}`,
+        ...(config.apiKey
+          ? { 'api-key': config.apiKey }
+          : { Authorization: `Bearer ${accessToken!.token}` }),
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(requestBody),
@@ -284,8 +289,9 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
   const tenantId = process.env.AZURE_TENANT_ID?.trim();
   const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
   const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
+  const apiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
 
-  if (!endpoint || !deployment) return null;
+  if (!endpoint || !deployment || (!apiKey && !tenantId && !clientId)) return null;
 
   // Prefer the per-repo service-principal client secret (standard SDK path)
   // over the homemade workload-identity flow. Falls back to the federated
@@ -293,8 +299,11 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
   // the cast service working in environments where Liliput's
   // app-registration tooling hasn't been run.
   let credential: TokenCredential;
-  let credentialName: 'client-secret' | 'k8s-federated' | 'default-azure-credential';
-  if (clientSecret && tenantId && clientId) {
+  let credentialName: 'client-secret' | 'k8s-federated' | 'default-azure-credential' | 'api-key';
+  if (apiKey) {
+    credential = new DefaultAzureCredential();
+    credentialName = 'api-key';
+  } else if (clientSecret && tenantId && clientId) {
     credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
     credentialName = 'client-secret';
   } else if (tenantId && clientId) {
@@ -321,6 +330,7 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
     deploymentName: deployment,
     apiVersion,
     credential,
+    apiKey,
     modelDisplayName: process.env.AZURE_OPENAI_MODEL_DISPLAY_NAME?.trim()
       || `${deployment} (Azure OpenAI)`,
   });
@@ -351,16 +361,19 @@ export async function listAzureChatDeployments(opts?: {
   const tenantId = process.env.AZURE_TENANT_ID?.trim();
   const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
   const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
+  const apiKey = process.env.AZURE_OPENAI_API_KEY?.trim();
   // The data-plane "list deployments" endpoint is only served by the
   // legacy 2023-03-15-preview API on most Azure OpenAI resources;
   // 2024-10-21 (the chat default) returns 404 for /openai/deployments.
   // Allow override for resources where this differs.
   const apiVersion = process.env.AZURE_OPENAI_LIST_API_VERSION?.trim() || '2023-03-15-preview';
 
-  if (!endpoint) return null;
+  if (!endpoint || (!apiKey && !tenantId && !clientId)) return null;
 
   let credential: TokenCredential;
-  if (clientSecret && tenantId && clientId) {
+  if (apiKey) {
+    credential = new DefaultAzureCredential();
+  } else if (clientSecret && tenantId && clientId) {
     credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
   } else if (tenantId && clientId) {
     credential = new K8sFederatedAadCredential({
@@ -375,7 +388,7 @@ export async function listAzureChatDeployments(opts?: {
   const fetchImpl = opts?.fetchImpl ?? fetch;
   let token;
   try {
-    token = await credential.getToken(AZURE_COGNITIVE_SCOPE);
+    token = apiKey ? null : await credential.getToken(AZURE_COGNITIVE_SCOPE);
   } catch (err) {
     logger.warn(
       { err: err instanceof Error ? err.message : String(err) },
@@ -383,7 +396,7 @@ export async function listAzureChatDeployments(opts?: {
     );
     return null;
   }
-  if (!token) return null;
+  if (!apiKey && !token) return null;
 
   const normalised = normaliseEndpoint(endpoint);
   const url = `${normalised}/openai/deployments?api-version=${encodeURIComponent(apiVersion)}`;
@@ -392,7 +405,7 @@ export async function listAzureChatDeployments(opts?: {
     response = await fetchImpl(url, {
       method: 'GET',
       headers: {
-        Authorization: `Bearer ${token.token}`,
+        ...(apiKey ? { 'api-key': apiKey } : { Authorization: `Bearer ${token!.token}` }),
         Accept: 'application/json',
       },
     });

@@ -70,6 +70,7 @@ describe('azure-secret-bootstrap', () => {
       AZURE_CLIENT_SECRET: 'shhh-from-secret',
       AZURE_OPENAI_ENDPOINT: 'https://crgar-liliput-ai.openai.azure.com/',
       AZURE_AI_FOUNDRY_ENDPOINT: 'https://crgar-liliput-ai.services.ai.azure.com/',
+      AZURE_OPENAI_API_KEY: 'key-from-secret',
     };
     const result = await bootstrapAzureSecretEnv({
       paths: { saTokenPath, saCaPath, saNamespacePath },

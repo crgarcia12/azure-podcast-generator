@@ -57,8 +57,9 @@ ENV REGISTRATION_ENABLED=true
 # `liliput-azure-sp` Kubernetes Secret (see
 # .github/skills/azure-app-registration). The API reads that Secret at
 # startup (services/azure-secret-bootstrap.ts) and populates
-# AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET into process.env
-# so ClientSecretCredential / DefaultAzureCredential just work.
+# AZURE_TENANT_ID / AZURE_CLIENT_ID / AZURE_CLIENT_SECRET /
+# AZURE_OPENAI_API_KEY into process.env so ClientSecretCredential,
+# DefaultAzureCredential, or API-key authentication can work.
 #
 # AZURE_OPENAI_ENDPOINT is also projected from the Secret at runtime, but
 # we bake a sensible default here so the image is usable in any env where
