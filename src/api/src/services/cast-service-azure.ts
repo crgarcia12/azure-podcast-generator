@@ -16,7 +16,7 @@
 // so a transient outage never breaks user sessions.
 
 import type { TokenCredential } from '@azure/core-auth';
-import { ClientSecretCredential } from '@azure/identity';
+import { ClientSecretCredential, DefaultAzureCredential } from '@azure/identity';
 import type { BeatProvider, CastSegment, PlannedBeat } from './cast-service.js';
 import { K8sFederatedAadCredential } from './k8s-aad-credential.js';
 import { logger } from '../logger.js';
@@ -285,7 +285,7 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
   const clientId = (process.env.AZURE_OPENAI_CLIENT_ID || process.env.AZURE_CLIENT_ID)?.trim();
   const clientSecret = process.env.AZURE_CLIENT_SECRET?.trim();
 
-  if (!endpoint || !deployment || !tenantId || !clientId) return null;
+  if (!endpoint || !deployment) return null;
 
   // Prefer the per-repo service-principal client secret (standard SDK path)
   // over the homemade workload-identity flow. Falls back to the federated
@@ -293,17 +293,22 @@ export function createAzureBeatProviderFromEnv(): BeatProvider | null {
   // the cast service working in environments where Liliput's
   // app-registration tooling hasn't been run.
   let credential: TokenCredential;
-  let credentialName: 'client-secret' | 'k8s-federated';
-  if (clientSecret) {
+  let credentialName: 'client-secret' | 'k8s-federated' | 'default-azure-credential';
+  if (clientSecret && tenantId && clientId) {
     credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
     credentialName = 'client-secret';
-  } else {
+  } else if (tenantId && clientId) {
     credential = new K8sFederatedAadCredential({
       tenantId,
       clientId,
       serviceAccountName: process.env.AZURE_SERVICE_ACCOUNT?.trim() || 'default',
     });
     credentialName = 'k8s-federated';
+  } else {
+    // In managed Azure hosts, DefaultAzureCredential can use workload
+    // identity or managed identity without copying client secrets into env.
+    credential = new DefaultAzureCredential();
+    credentialName = 'default-azure-credential';
   }
 
   logger.info(
@@ -352,17 +357,19 @@ export async function listAzureChatDeployments(opts?: {
   // Allow override for resources where this differs.
   const apiVersion = process.env.AZURE_OPENAI_LIST_API_VERSION?.trim() || '2023-03-15-preview';
 
-  if (!endpoint || !tenantId || !clientId) return null;
+  if (!endpoint) return null;
 
   let credential: TokenCredential;
-  if (clientSecret) {
+  if (clientSecret && tenantId && clientId) {
     credential = new ClientSecretCredential(tenantId, clientId, clientSecret);
-  } else {
+  } else if (tenantId && clientId) {
     credential = new K8sFederatedAadCredential({
       tenantId,
       clientId,
       serviceAccountName: process.env.AZURE_SERVICE_ACCOUNT?.trim() || 'default',
     });
+  } else {
+    credential = new DefaultAzureCredential();
   }
 
   const fetchImpl = opts?.fetchImpl ?? fetch;

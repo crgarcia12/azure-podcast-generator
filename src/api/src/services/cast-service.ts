@@ -31,6 +31,8 @@ export interface CastSession {
   // "use the provider default".
   systemPromptOverride: string;
   modelOverride: string;
+  generationStatus: 'pending' | 'ai' | 'mock-fallback';
+  providerError?: string;
   createdAt: string;
   segments: CastSegment[];
   outline: PlannedBeat[];
@@ -63,6 +65,17 @@ export interface CastMeta {
   // show "(custom)" badges so the listener knows their tweak took effect.
   systemPromptIsOverride: boolean;
   modelIsOverride: boolean;
+  generationStatus: CastSession['generationStatus'];
+  providerError?: string;
+}
+
+export interface CastProviderStatus {
+  configuredProvider: 'azure' | 'mock';
+  activeProvider: string;
+  modelDisplayName: string;
+  aiConfigured: boolean;
+  lastFallbackAt?: string;
+  lastFallbackReason?: string;
 }
 
 const MIN_TOPIC_LENGTH = 2;
@@ -408,42 +421,42 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
   const setupGuest = (() => {
     switch (kind) {
       case 'why':
-        return `That cuts right to the heart of ${topic}. The "why" sits at the intersection of motivation, opportunity, and timing — and ignoring any of those misses the real story.`;
+        return `To answer the "why" behind ${topic}, separate three layers: the conditions that made the outcome possible, the incentives that made it attractive, and the decisions that turned possibility into action. Those layers can point in different directions, so we should not collapse them into one cause.`;
       case 'how':
-        return `Great mechanics question. The "how" of ${topic} is where the abstract stuff hits the ground — there are concrete steps, decisions, and trade-offs that most takes skip over entirely.`;
+        return `The "how" of ${topic} is a sequence, not a single move. We can follow the inputs, decisions, constraints, and feedback at each stage, then distinguish what is directly observable from what we are inferring.`;
       case 'what':
-        return `Definitions matter here, especially with ${topic} — different camps mean different things by the same words, and that's where a surprising amount of the disagreement actually lives.`;
+        return `Before answering what ${topic} is, define the boundary: what belongs inside the idea, what does not, and which related terms are being confused with it. That distinction determines which evidence and consequences are relevant.`;
       case 'when':
-        return `Chronology is more important here than people realise. The timing of ${topic} is part of why it had the impact it did.`;
+        return `For the timing of ${topic}, build a short chain rather than naming one magic date: identify the prior conditions, the trigger, and the moment when the available choices changed. That keeps chronology connected to cause without pretending that sequence alone proves causation.`;
       case 'who':
-        return `The cast of characters around ${topic} is genuinely fascinating — there are obvious names, and then a few quiet protagonists most people have never heard of.`;
+        return `The people around ${topic} should be mapped by role: who decided, who carried it out, who challenged it, and who absorbed the consequences. That avoids turning a distributed process into a hero story built around whichever name is easiest to remember.`;
       case 'where':
-        return `Geography matters more in ${topic} than people give it credit for — the place shapes the conditions, and the conditions shape what's possible.`;
+        return `Place matters to ${topic} when it changes the available resources, rules, relationships, or risks. We should name which of those conditions matter instead of treating geography as atmosphere.`;
       case 'yesno':
-        return `Short answer is "it depends" — long answer is where ${topic} gets interesting. There's a yes-version and a no-version, and the difference between them tells you what the real question is.`;
+        return `The honest answer is conditional rather than a reflexive yes or no. For ${topic}, state the condition that makes the answer yes, the condition that makes it no, and the observable difference between those two cases.`;
       default:
-        return `That's a really good angle on ${topic}. Most people don't ask it that way, and it cuts straight to the part of the story that's usually glossed over.`;
+        return `The useful way into ${topic} is to turn the question into claims we can examine: what would have to be true, what evidence would support it, and which consequence would distinguish it from an alternative explanation.`;
     }
   })();
 
   const meatGuest = (() => {
     switch (kind) {
       case 'why':
-        return `The "why" comes down to two things: the conditions that made ${topic} possible at that particular moment, and the people who saw the opening. Strip away either and you don't get the same outcome.`;
+        return `For "${trimmed}", compare the strongest plausible causes instead of choosing the first satisfying story. Ask which conditions were necessary, which merely helped, and what would have happened if one of them had been absent.`;
       case 'how':
-        return `Step one is recognising that ${topic} doesn't happen in a single move — it's a sequence. Step two: each step depends on the previous one in ways that aren't obvious until you're inside it. That's why the "how" gets misread so often.`;
+        return `For "${trimmed}", trace the sequence from starting condition to outcome and mark each decision point. The important detail is where a constraint or trade-off narrowed the next choice; that is usually more explanatory than a list of milestones.`;
       case 'what':
-        return `Strip ${topic} down to its atomic elements and you get something simpler than the usual narrative suggests — but the simple version is the powerful one. Once you see it, you can't unsee how it shapes everything downstream.`;
+        return `For "${trimmed}", use a working definition and test its edges. Explain the smallest example that fits, the closest example that does not, and what changes when the definition is widened or narrowed.`;
       case 'when':
-        return `The window mattered enormously. Earlier, ${topic} would have been impossible. Later, the moment would have passed. The timing wasn't accidental — it was the product of decades of pressure finally finding a release valve.`;
+        return `For "${trimmed}", distinguish the date an event became visible from the conditions that made it possible. A careful answer names the timing evidence and leaves room for multiple contributing causes.`;
       case 'who':
-        return `Three names you should know, and probably don't all of them. Each made a choice the others didn't see coming, and the combination of those choices is what made ${topic} what it became.`;
+        return `For "${trimmed}", follow decisions and consequences rather than inventing a list of famous names. The answer should identify the relevant roles, explain how they interacted, and acknowledge whose perspective is missing.`;
       case 'where':
-        return `The setting did most of the heavy lifting people credit to the personalities. ${topic} couldn't have unfolded the same way anywhere else — the local conditions selected for exactly the kind of approach that ended up working.`;
+        return `For "${trimmed}", compare the relevant conditions in the place being discussed with a plausible alternative. That counterfactual reveals whether location is a mechanism, a constraint, or merely part of the story's setting.`;
       case 'yesno':
-        return `Honest answer: yes and no, and the difference between yes and no is where ${topic} stops being a trivia question and starts being a genuinely useful framework. Most people stop at the headline; the real value is one layer down.`;
+        return `For "${trimmed}", give the shortest defensible answer first, then state the condition that limits it. If the available context cannot establish the claim, say what additional evidence would settle it instead of filling the gap with confidence.`;
       default:
-        return `The core of "${trimmed}" is something a lot of people get wrong about ${topic}. Conventional wisdom says one thing, but if you actually trace the evidence, you end up somewhere more nuanced — and frankly more useful.`;
+        return `For "${trimmed}", lay out the main explanation, its strongest alternative, and the observation that would separate them. That gives the listener a way to reason about ${topic} rather than handing them an unsupported conclusion.`;
     }
   })();
 
@@ -457,8 +470,8 @@ function buildAnswerBeats(topic: string, question: string, style: string): Plann
       guestLine: meatGuest,
     },
     {
-      hostLine: `That's a much richer answer than the one-liner I was expecting. Anything you'd add for someone who really wants to sit with that question?`,
-      guestLine: `Just that ${topic} rewards patience here — the deeper you go on "${trimmed}", the more the surface answer falls apart in interesting ways. And the listener who asked clearly already senses that.`,
+      hostLine: `What would change your answer, and what should a listener watch for as they explore "${trimmed}" further?`,
+      guestLine: `The answer should change when better evidence changes the mechanism or the comparison. For ${topic}, keep the claim proportionate to what is known, record the uncertainty, and follow the consequence that matters most to the people affected.`,
     },
     {
       hostLine: `Beautifully said. Listener, thanks for that one — it pushed the conversation somewhere good. Now, picking up where we left off…`,
@@ -480,6 +493,7 @@ export interface CastService {
   startSession(topic: string, options?: StartSessionOptions): CastSession;
   getSession(id: string): CastSession | undefined;
   getMeta(id: string): CastMeta | undefined;
+  getProviderStatus(): CastProviderStatus;
   addQuestion(id: string, question: string): { questionId: string };
   // Async generator that yields one segment at a time, awaiting between
   // segments to emulate natural pacing and to give listeners time to ask.
@@ -516,6 +530,8 @@ export function createMockBeatProvider(): BeatProvider {
 export function createCastService(provider?: BeatProvider): CastService {
   const sessions = new Map<string, CastSession>();
   const beatProvider: BeatProvider = provider ?? createMockBeatProvider();
+  let lastFallbackAt: string | undefined;
+  let lastFallbackReason: string | undefined;
 
   function notify(session: CastSession): void {
     const old = session.signal;
@@ -554,6 +570,7 @@ export function createCastService(provider?: BeatProvider): CastService {
         style,
         systemPromptOverride,
         modelOverride,
+        generationStatus: 'pending',
         createdAt: new Date().toISOString(),
         segments: [],
         outline: [],
@@ -576,8 +593,16 @@ export function createCastService(provider?: BeatProvider): CastService {
             deploymentOverride: modelOverride || undefined,
           });
         } catch (err) {
+          const reason = err instanceof Error ? err.message : String(err);
+          session.generationStatus = 'mock-fallback';
+          session.providerError = reason;
+          lastFallbackAt = new Date().toISOString();
+          lastFallbackReason = reason;
           console.error('[cast] outline generation failed; falling back to template', err);
           session.outline = buildOutline(topic, style);
+        }
+        if (session.generationStatus === 'pending') {
+          session.generationStatus = beatProvider.providerName === 'azure-openai' ? 'ai' : 'mock-fallback';
         }
         notify(session);
       })();
@@ -610,6 +635,19 @@ export function createCastService(provider?: BeatProvider): CastService {
         systemPrompt: effectivePrompt,
         systemPromptIsOverride: Boolean(session.systemPromptOverride),
         modelIsOverride: Boolean(session.modelOverride),
+        generationStatus: session.generationStatus,
+        providerError: session.providerError,
+      };
+    },
+
+    getProviderStatus(): CastProviderStatus {
+      return {
+        configuredProvider: beatProvider.providerName === 'azure-openai' ? 'azure' : 'mock',
+        activeProvider: beatProvider.providerName,
+        modelDisplayName: beatProvider.modelDisplayName,
+        aiConfigured: beatProvider.providerName === 'azure-openai',
+        lastFallbackAt,
+        lastFallbackReason,
       };
     },
 
@@ -669,6 +707,11 @@ export function createCastService(provider?: BeatProvider): CastService {
               deploymentOverride: session.modelOverride || undefined,
             });
           } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            session.generationStatus = 'mock-fallback';
+            session.providerError = reason;
+            lastFallbackAt = new Date().toISOString();
+            lastFallbackReason = reason;
             console.error('[cast] answer-beat generation failed; using template', err);
             beats = buildAnswerBeats(session.topic, q.text, session.style);
           }

@@ -153,6 +153,16 @@ interface CastMeta {
   systemPrompt: string;
   systemPromptIsOverride?: boolean;
   modelIsOverride?: boolean;
+  generationStatus?: 'pending' | 'ai' | 'mock-fallback';
+  providerError?: string;
+}
+
+interface CastProviderStatus {
+  activeProvider: string;
+  modelDisplayName: string;
+  aiConfigured: boolean;
+  lastFallbackAt?: string;
+  lastFallbackReason?: string;
 }
 
 const SPEED_PRESETS = [0.85, 1.0, 1.15, 1.3, 1.5, 1.75] as const;
@@ -238,6 +248,7 @@ export default function Home() {
   const [currentSegment, setCurrentSegment] = useState<CastSegment | null>(null);
   const [streamFinished, setStreamFinished] = useState(false);
   const [meta, setMeta] = useState<CastMeta | null>(null);
+  const [providerStatus, setProviderStatus] = useState<CastProviderStatus | null>(null);
   const [showAbout, setShowAbout] = useState(false);
   // Playback speed multiplier — applied on top of the per-speaker rate.
   // Restored from localStorage so the listener's preference sticks.
@@ -371,6 +382,31 @@ export default function Home() {
     } catch {
       /* localStorage unavailable — fall back to defaults */
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void apiFetch('/api/cast/status')
+      .then(async (res) => {
+        if (!res.ok) return;
+        const data = (await res.json()) as Partial<CastProviderStatus>;
+        if (cancelled) return;
+        if (typeof data.activeProvider === 'string' && typeof data.modelDisplayName === 'string') {
+          setProviderStatus({
+            activeProvider: data.activeProvider,
+            modelDisplayName: data.modelDisplayName,
+            aiConfigured: data.aiConfigured === true,
+            lastFallbackAt: typeof data.lastFallbackAt === 'string' ? data.lastFallbackAt : undefined,
+            lastFallbackReason: typeof data.lastFallbackReason === 'string' ? data.lastFallbackReason : undefined,
+          });
+        }
+      })
+      .catch(() => {
+        // The provider badge is diagnostic only; podcast startup handles errors.
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Keep speedRef in sync with state.
@@ -756,8 +792,34 @@ export default function Home() {
           if (typeof segment.index === 'number' && segment.index > lastSegmentIndexRef.current) {
             lastSegmentIndexRef.current = segment.index;
           }
-          queueRef.current.push(segment);
-          if (!speakingRef.current) speakNext();
+           queueRef.current.push(segment);
+           // The create response is returned before AI generation finishes.
+           // Refresh metadata after the first emitted segment so the UI can
+           // distinguish real AI output from a mock fallback.
+           if (segment.index === 0) {
+             void apiFetch(`/api/cast/${encodeURIComponent(id)}/meta`)
+               .then((metaResponse) => (metaResponse.ok ? metaResponse.json() : null))
+               .then((updated: Partial<CastMeta> | null) => {
+                 if (!updated || typeof updated !== 'object') return;
+                 setMeta((previous) =>
+                   previous
+                     ? {
+                         ...previous,
+                         generationStatus:
+                           updated.generationStatus === 'ai' || updated.generationStatus === 'mock-fallback'
+                             ? updated.generationStatus
+                             : previous.generationStatus,
+                         providerError:
+                           typeof updated.providerError === 'string' ? updated.providerError : previous.providerError,
+                       }
+                     : previous,
+                 );
+               })
+               .catch(() => {
+                 // Metadata is informational; playback should continue.
+               });
+           }
+           if (!speakingRef.current) speakNext();
         } catch {
           /* ignore malformed payload */
         }
@@ -832,8 +894,10 @@ export default function Home() {
           modelDisplayName?: string;
           systemPrompt?: string;
           systemPromptIsOverride?: boolean;
-          modelIsOverride?: boolean;
-        };
+           modelIsOverride?: boolean;
+           generationStatus?: 'pending' | 'ai' | 'mock-fallback';
+           providerError?: string;
+         };
         setSessionId(data.id);
         setTopic(data.topic);
         setStreamFinished(false);
@@ -847,8 +911,10 @@ export default function Home() {
           modelDisplayName: data.modelDisplayName ?? 'unknown',
           systemPrompt: data.systemPrompt ?? '',
           systemPromptIsOverride: Boolean(data.systemPromptIsOverride),
-          modelIsOverride: Boolean(data.modelIsOverride),
-        });
+           modelIsOverride: Boolean(data.modelIsOverride),
+           generationStatus: data.generationStatus,
+           providerError: data.providerError,
+         });
         // Persist last-used style + LLM overrides so the next session reuses
         // them. Empty overrides clear the stored value so the listener isn't
         // surprised by an old prompt re-appearing.
@@ -1122,6 +1188,21 @@ export default function Home() {
             In-car podcast · one topic · press Go
           </p>
         </header>
+
+        {providerStatus ? (
+          <div
+            className={`w-full rounded-xl border px-3 py-2 text-center text-xs ${
+              providerStatus.aiConfigured
+                ? 'border-emerald-300/20 bg-emerald-400/10 text-emerald-100'
+                : 'border-amber-300/30 bg-amber-400/10 text-amber-100'
+            }`}
+            role="status"
+          >
+            {providerStatus.aiConfigured
+              ? `Real AI connected · ${providerStatus.modelDisplayName}`
+              : 'Mock mode · Azure AI is not configured, so responses are templated'}
+          </div>
+        ) : null}
 
         {phase === 'idle' || phase === 'starting' || phase === 'error' ? (
           <section className="flex w-full flex-col items-center gap-5 sm:gap-6">
@@ -1488,9 +1569,11 @@ export default function Home() {
                   {meta.systemPrompt}
                 </pre>
                 <p className="mt-2 text-[11px] text-white/50">
-                  {meta.provider === 'azure-openai'
-                    ? 'PodCraft is calling Azure OpenAI for outline + answer generation. If a call fails, the session falls back to a templated outline so the show keeps going.'
-                    : 'PodCraft is currently using a templated mock (no LLM endpoint configured for this preview). The system prompt above is the instruction that would be sent to a model when one is wired up.'}
+                  {meta.generationStatus === 'mock-fallback'
+                    ? `This episode used the local mock fallback because the AI request failed: ${meta.providerError ?? 'no error detail was returned'}.`
+                    : meta.provider === 'azure-openai'
+                      ? 'PodCraft called Azure OpenAI for this episode.'
+                      : 'PodCraft is currently using a templated mock because Azure AI is not configured.'}
                 </p>
               </div>
             ) : null}

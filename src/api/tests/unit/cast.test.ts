@@ -35,6 +35,24 @@ function parseEvents(body: string): ParsedEvent[] {
 }
 
 describe('cast endpoints', () => {
+  describe('GET /api/cast/status', () => {
+    it('reports when the deterministic mock is active instead of hiding it', async () => {
+      const previous = process.env.LLM_PROVIDER;
+      delete process.env.LLM_PROVIDER;
+      try {
+        const app = createApp();
+        const res = await request(app).get('/api/cast/status');
+        expect(res.status).toBe(200);
+        expect(res.body.activeProvider).toBe('mock-template');
+        expect(res.body.aiConfigured).toBe(false);
+        expect(res.body.configuredProvider).toBe('mock');
+      } finally {
+        if (previous === undefined) delete process.env.LLM_PROVIDER;
+        else process.env.LLM_PROVIDER = previous;
+      }
+    });
+  });
+
   describe('GET /api/cast/models', () => {
     it('returns the fallback model list when Azure is not configured', async () => {
       const prev = process.env.LLM_PROVIDER;
@@ -224,6 +242,7 @@ describe('cast endpoints', () => {
       expect(res.status).toBe(201);
       expect(res.body.style).toBe('punchy and contrarian');
       expect(res.body.provider).toBe('mock-template');
+      expect(res.body.generationStatus).toBe('pending');
       expect(res.body.modelDisplayName).toMatch(/PodCraft/i);
       expect(res.body.systemPrompt).toContain('rome');
       expect(res.body.systemPrompt).toContain('punchy and contrarian');
@@ -366,6 +385,8 @@ describe('cast endpoints', () => {
       const allText = segments.map((s) => s.text).join(' ');
       expect(allText.toLowerCase()).toContain('listener');
       expect(allText.toLowerCase()).toContain('modern road bike');
+      expect(allText).not.toContain('Conventional wisdom says one thing');
+      expect(allText).not.toContain("That's a really good angle");
     });
 
     it('answers with a multi-beat exchange that quotes the question text verbatim', async () => {

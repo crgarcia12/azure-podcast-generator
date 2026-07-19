@@ -46,6 +46,12 @@ function classifyDeployment(model: string): {
 }
 
 export function mapCastEndpoints(app: Express, service: CastService): void {
+  // Non-secret diagnostics: make it obvious whether a session can use Azure AI
+  // or is running from the deterministic local fallback.
+  app.get('/api/cast/status', (_req: Request, res: Response) => {
+    res.status(200).json(service.getProviderStatus());
+  });
+
   // Surface the default system-prompt template so the start screen can pre-
   // populate the "System prompt" textarea with the *current* default. Static
   // string + small `style` clause so the client can interpolate the active
@@ -211,6 +217,8 @@ export function mapCastEndpoints(app: Express, service: CastService): void {
         systemPrompt: meta?.systemPrompt,
         systemPromptIsOverride: meta?.systemPromptIsOverride ?? false,
         modelIsOverride: meta?.modelIsOverride ?? false,
+        generationStatus: meta?.generationStatus ?? 'pending',
+        providerError: meta?.providerError,
       });
     } catch (err) {
       if (err instanceof CastValidationError) {
