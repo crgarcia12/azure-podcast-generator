@@ -6,11 +6,12 @@
 # one container, fronted by a small Node proxy. See LILIPUT_DEPLOY_CONTRACT.md
 # and scripts/liliput-launcher.mjs for the why.
 
-ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-15f4165a
+ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-811f4c7b
 
 # ---------- API build ----------
 FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS api-build
 WORKDIR /api
+COPY src/shared /shared
 COPY src/api/package.json src/api/package-lock.json* ./
 RUN npm ci
 COPY src/api/tsconfig.json ./
@@ -25,6 +26,7 @@ ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
 ENV NEXT_PUBLIC_API_URL=${BASE_PATH}
 ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /web
+COPY src/shared /shared
 COPY src/web/package.json src/web/package-lock.json* ./
 RUN npm ci
 COPY src/web/ ./
