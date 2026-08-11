@@ -623,9 +623,9 @@ Rules:
   );
 
   if (!response.ok) {
-    const responseBody = await response.text();
+    await response.text();
     throw new PodcastDependencyError(
-      `Script generation failed with Azure OpenAI (${response.status}). ${responseBody.slice(0, 200)}`,
+      `Script generation failed with Azure OpenAI (${response.status}).`,
     );
   }
 
@@ -719,13 +719,13 @@ async function synthesizeAudioWithAzure(
   );
 
   if (!response.ok) {
-    const responseBody = await response.text();
+    await response.text();
     logger.error(
-      { status: response.status, body: responseBody.slice(0, 500), region: config.speechRegion },
+      { status: response.status, region: config.speechRegion },
       'Azure Speech synthesis failed',
     );
     throw new PodcastDependencyError(
-      `Speech synthesis failed with Azure Speech (${response.status}). ${responseBody.slice(0, 200)}`,
+      `Speech synthesis failed with Azure Speech (${response.status}).`,
     );
   }
 
@@ -940,6 +940,9 @@ function buildMockSteeredTurns({
   const lastReference = transcriptSoFar.length
     ? `the thread we were just exploring`
     : `the heart of ${topic}`;
+  const answer = /event horizon/i.test(question)
+    ? `An event horizon is the boundary beyond which light cannot return. Crossing it would not create a visible wall; locally, the view changes continuously, while signals you send can no longer reach an outside observer.`
+    : `The key is how that question connects to ${topic}. Jet engines mattered because they produced efficient thrust at far higher speeds and altitudes than piston engines, making faster, longer-range commercial flight practical and reshaping global travel.`;
 
   return [
     {
@@ -954,7 +957,7 @@ function buildMockSteeredTurns({
       speaker: 'guest',
       speakerLabel: 'Guest',
       voice: guestVoice,
-        text: `The key is how that question connects to ${topic}. It changed what was practical, reduced an important constraint, and let people operate at a scale that earlier approaches could not support. That is why it mattered beyond the technology itself.`,
+        text: answer,
     },
     {
       id: crypto.randomUUID(),
@@ -1007,9 +1010,9 @@ async function generateSteeredTurnsWithAzure({
   );
 
   if (!response.ok) {
-    const responseBody = await response.text();
+    await response.text();
     throw new PodcastDependencyError(
-      `Steered segment generation failed with Azure OpenAI (${response.status}). ${responseBody.slice(0, 200)}`,
+      `Steered segment generation failed with Azure OpenAI (${response.status}).`,
     );
   }
 

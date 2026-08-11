@@ -133,7 +133,7 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
 
       if (error instanceof PodcastDependencyError) {
         logger.error(
-          { err: error, topic, userId: req.user?.sub },
+          { err: error, userId: req.user?.sub },
           'Podcast generation dependency failed',
         );
 
@@ -144,7 +144,7 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
         return;
       }
 
-      logger.error({ err: error, topic, userId: req.user?.sub }, 'Podcast generation failed');
+      logger.error({ err: error, userId: req.user?.sub }, 'Podcast generation failed');
       res.status(500).json({ error: 'Unable to create a podcast right now' });
     }
   });
@@ -377,7 +377,15 @@ function toEpisodeResponse(
     provider: episode.provider,
     generationStatus: episode.generationStatus,
     audioSegments: hasAudio
-      ? episode.audioSegments.map((segment) => ({
+      ? (episode.audioSegments ?? [{
+          id: episode.id,
+          index: 0,
+          turnStart: 0,
+          turnEnd: episode.transcript.length,
+          status: 'ready' as const,
+          audioBuffer: episode.audioBuffer,
+          audioContentType: episode.audioContentType,
+        }]).map((segment) => ({
           id: segment.id,
           index: segment.index,
           status: segment.status,
