@@ -9,6 +9,7 @@ import {
   savePodcastEpisode,
   type PodcastEpisodeDraft,
   type StoredPodcastEpisode,
+  type StoredAudioSegment,
   type StoredSteeredSegment,
   type SteeredSegmentTurn,
 } from '../models/podcast-store.js';
@@ -27,10 +28,22 @@ const DEFAULT_GUEST_VOICE = 'en-US-GuyNeural';
 const AZURE_COGNITIVE_SERVICES_SCOPE = 'https://cognitiveservices.azure.com/.default';
 
 export const PODCAST_TOPIC_MAX_LENGTH = 120;
+export const PODCAST_TURN_MAX_WORDS = 80;
+
+export type AudienceLevel = 'Beginner' | 'Intermediate' | 'Expert';
+export type EpisodeDurationMinutes = 5 | 10 | 15;
+export type ConversationStyle = 'Conversational' | 'Educational' | 'Debate';
+
+export interface PodcastGenerationControls {
+  audience: AudienceLevel;
+  durationMinutes: EpisodeDurationMinutes;
+  style: ConversationStyle;
+}
 
 interface CreatePodcastInput {
   ownerId: string;
   topic: string;
+  controls: PodcastGenerationControls;
 }
 
 interface PodcastLookupInput {
@@ -148,26 +161,61 @@ export function createPodcastService(): PodcastService {
   return createMockPodcastService();
 }
 
+function recordTiming(
+  stage: 'script_generation' | 'initial_audio_ready' | 'question_acknowledged' | 'answer_ready',
+  startedAt: number,
+  provider: 'azure' | 'mock',
+  success: boolean,
+): void {
+  logger.info(
+    { event: 'podcast_provider_timing', stage, durationMs: Date.now() - startedAt, provider, success },
+    'Podcast provider stage completed',
+  );
+}
+
 function createMockPodcastService(): PodcastService {
   const mockHostVoice = process.env.PODCAST_HOST_VOICE?.trim() || DEFAULT_HOST_VOICE;
   const mockGuestVoice = process.env.PODCAST_GUEST_VOICE?.trim() || DEFAULT_GUEST_VOICE;
 
   return {
-    async createEpisode({ ownerId, topic }: CreatePodcastInput): Promise<StoredPodcastEpisode> {
+    async createEpisode({ ownerId, topic, controls }: CreatePodcastInput): Promise<StoredPodcastEpisode> {
+      const scriptStartedAt = Date.now();
       const draftEpisode = createDraftEpisode({
         ownerId,
         topic,
-        script: buildMockScript(topic),
+        controls,
+        provider: 'mock',
+        script: buildMockScript(topic, controls),
       });
+      validatePodcastScript(draftEpisode.transcript, controls.durationMinutes);
+      recordTiming('script_generation', scriptStartedAt, 'mock', true);
+      const audioStartedAt = Date.now();
       const audioBuffer = createToneWaveBuffer(
-        Math.min(8000, Math.max(2500, draftEpisode.transcript.length * 1200)),
+        2500,
       );
+      const audioSegments = buildPendingAudioSegments(draftEpisode.transcript.length);
+      audioSegments[0] = {
+        ...audioSegments[0],
+        status: 'ready',
+        audioBuffer,
+        audioContentType: 'audio/wav',
+      };
       const episode: StoredPodcastEpisode = {
         ...draftEpisode,
         audioBuffer,
         audioContentType: 'audio/wav',
+        audioSegments,
       };
       savePodcastEpisode(episode);
+      recordTiming('initial_audio_ready', audioStartedAt, 'mock', true);
+      setTimeout(() => {
+        for (const segment of episode.audioSegments) {
+          segment.status = 'ready';
+          segment.audioBuffer ??= createToneWaveBuffer(1800);
+          segment.audioContentType = 'audio/wav';
+        }
+        episode.generationStatus = 'ready';
+      }, 75);
       return episode;
     },
     async getEpisodeById({ episodeId, ownerId }: PodcastLookupInput): Promise<StoredPodcastEpisode | null> {
@@ -184,6 +232,11 @@ function createMockPodcastService(): PodcastService {
         throw new PodcastEpisodeNotFoundError('Podcast not found');
       }
 
+      const acknowledgedAt = Date.now();
+      recordTiming('question_acknowledged', acknowledgedAt, 'mock', true);
+      if (input.question === '__FAIL_INTERVENTION__' || process.env.MOCK_INTERVENTION_FAIL === 'true') {
+        throw new PodcastDependencyError("We couldn't answer that question. Please retry or resume the episode.");
+      }
       const transcriptSoFar = sliceTranscriptByPlayback(episode, input.playbackPositionSeconds);
       const turns = buildMockSteeredTurns({
         topic: episode.topic,
@@ -207,6 +260,7 @@ function createMockPodcastService(): PodcastService {
         audioContentType: 'audio/wav',
       };
       appendSteeredSegment(episode.id, segment);
+      recordTiming('answer_ready', acknowledgedAt, 'mock', true);
       return segment;
     },
     async getSteeredSegment({ episodeId, ownerId, segmentId }) {
@@ -221,22 +275,39 @@ function createMockPodcastService(): PodcastService {
 
 function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
   return {
-    async createEpisode({ ownerId, topic }: CreatePodcastInput): Promise<StoredPodcastEpisode> {
-      const generatedScript = await generateScriptWithAzure(config, topic);
+    async createEpisode({ ownerId, topic, controls }: CreatePodcastInput): Promise<StoredPodcastEpisode> {
+      const scriptStartedAt = Date.now();
+      const generatedScript = await generateScriptWithAzure(config, topic, controls);
       const draftEpisode = createDraftEpisode({
         ownerId,
         topic,
+        controls,
+        provider: 'azure',
         script: generatedScript,
       });
+      validatePodcastScript(draftEpisode.transcript, controls.durationMinutes);
+      recordTiming('script_generation', scriptStartedAt, 'azure', true);
 
       try {
-        const audioBuffer = await synthesizeAudioWithAzure(config, draftEpisode);
+        const audioStartedAt = Date.now();
+        const firstDraft = { ...draftEpisode, transcript: draftEpisode.transcript.slice(0, 2) };
+        const audioBuffer = await synthesizeAudioWithAzure(config, firstDraft);
+        const audioSegments = buildPendingAudioSegments(draftEpisode.transcript.length);
+        audioSegments[0] = {
+          ...audioSegments[0],
+          status: 'ready',
+          audioBuffer,
+          audioContentType: 'audio/mpeg',
+        };
         const episode: StoredPodcastEpisode = {
           ...draftEpisode,
           audioBuffer,
           audioContentType: 'audio/mpeg',
+          audioSegments,
         };
         savePodcastEpisode(episode);
+        recordTiming('initial_audio_ready', audioStartedAt, 'azure', true);
+        void synthesizeRemainingSegments(config, episode);
         return episode;
       } catch (error) {
         if (error instanceof PodcastDependencyError) {
@@ -264,6 +335,8 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
       }
 
       const transcriptSoFar = sliceTranscriptByPlayback(episode, input.playbackPositionSeconds);
+      const interventionStartedAt = Date.now();
+      recordTiming('question_acknowledged', interventionStartedAt, 'azure', true);
       const turns = await generateSteeredTurnsWithAzure({
         config,
         topic: episode.topic,
@@ -283,6 +356,9 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
           voice: turn.voice,
           text: turn.text,
         })),
+        controls: episode.controls,
+        provider: 'azure',
+        generationStatus: 'preparing_audio',
         createdAt: new Date().toISOString(),
       };
 
@@ -305,6 +381,7 @@ function createAzurePodcastService(config: AzurePodcastConfig): PodcastService {
         audioContentType: 'audio/mpeg',
       };
       appendSteeredSegment(episode.id, segment);
+      recordTiming('answer_ready', interventionStartedAt, 'azure', true);
       return segment;
     },
     async getSteeredSegment({ episodeId, ownerId, segmentId }) {
@@ -391,48 +468,62 @@ function readAzureConfig(): AzurePodcastConfig | PodcastConfigurationError {
   );
 }
 
-function buildMockScript(topic: string): GeneratedPodcastScript {
+function buildMockScript(
+  topic: string,
+  controls: PodcastGenerationControls,
+): GeneratedPodcastScript {
+  const targetTurns = controls.durationMinutes * 4;
+  const level = controls.audience === 'Beginner'
+    ? 'We will explain each idea in plain language and define technical terms as they appear.'
+    : controls.audience === 'Expert'
+      ? 'We will focus on mechanisms, trade-offs, and the evidence behind competing interpretations.'
+      : 'We will connect the essential context to concrete examples without assuming specialist knowledge.';
+  const style = controls.style === 'Debate'
+    ? 'The two perspectives are worth testing against each other rather than forcing an easy consensus.'
+    : controls.style === 'Educational'
+      ? 'Let us build the explanation one clear step at a time.'
+      : 'Let us keep this relaxed and follow the most interesting thread.';
+  const turns: GeneratedPodcastScript['turns'] = [];
+  const prompts = [
+    `Welcome. Today we are exploring ${topic}. ${level}`,
+    `${toTitleCase(topic)} matters because it links people, decisions, technology, and consequences that are still visible today.`,
+    `Before we jump into details, what is the simplest way to frame the story?`,
+    `Start with the problem people were trying to solve, then watch how each solution created a new possibility and a new constraint.`,
+    `That is useful. ${style} Which turning point changed the direction most?`,
+    `The decisive moment was when an ambitious idea became practical enough to scale. That changed expectations, investment, and who could participate.`,
+    `What do people commonly misunderstand when they first learn about this?`,
+    `They often remember a single invention or personality. In reality, progress came from teams, experiments, setbacks, regulation, and accumulated know-how.`,
+    `So the setbacks are not a side note; they are part of the explanation.`,
+    `Exactly. Failures revealed hidden assumptions, and the response to them often shaped standards and better engineering for the next generation.`,
+    `Bring that forward to the present. What should listeners notice now?`,
+    `Look for the same tension between speed, safety, cost, and public trust. The tools change, but those trade-offs remain remarkably consistent.`,
+    `Is there a useful way to compare the competing choices without oversimplifying them?`,
+    `Ask what each choice optimized, who carried the risk, and what evidence was available at the time. That makes the disagreement easier to understand.`,
+    `I like that because it avoids judging the past with information people did not yet have.`,
+    `Right, while still holding decisions accountable. Context explains a choice; it does not automatically excuse its consequences.`,
+    `What is one detail that gives the story a more human scale?`,
+    `Behind every milestone were ordinary people learning unfamiliar skills, adapting routines, and deciding whether a new system deserved their trust.`,
+    `As we close, give us the one idea worth carrying into the next conversation.`,
+    `${toTitleCase(topic)} is best understood as an evolving conversation between imagination and constraint. The most durable progress respected both.`,
+  ];
+  for (let index = 0; index < targetTurns; index += 1) {
+    const speaker = index % 2 === 0 ? 'host' : 'guest';
+    const base = prompts[index % prompts.length];
+    const chapter = Math.floor(index / prompts.length);
+    const text = chapter === 0
+      ? base
+      : `${base} In this part of the story, that pattern helps us connect another stage of ${topic} to the larger picture.`;
+    turns.push({
+      speaker,
+      speakerLabel: speaker === 'host' ? 'Host' : 'Guest',
+      voice: speaker === 'host' ? DEFAULT_HOST_VOICE : DEFAULT_GUEST_VOICE,
+      text,
+    });
+  }
   return {
     title: `${toTitleCase(topic)} in Conversation`,
-    summary: `A quick interview-style podcast exploring ${topic}.`,
-    turns: [
-      {
-        speaker: 'host',
-        speakerLabel: 'Host',
-        voice: DEFAULT_HOST_VOICE,
-        text: `Welcome back. Today we are diving into ${topic}, and I want to unpack why this story still matters.`,
-      },
-      {
-        speaker: 'guest',
-        speakerLabel: 'Guest',
-        voice: DEFAULT_GUEST_VOICE,
-        text: `${toTitleCase(topic)} is a strong podcast topic because it mixes history, personalities, and the decisions that changed an industry.`,
-      },
-      {
-        speaker: 'host',
-        speakerLabel: 'Host',
-        voice: DEFAULT_HOST_VOICE,
-        text: `Set the scene for us. What is the first thing a listener should understand before the timeline gets complicated?`,
-      },
-      {
-        speaker: 'guest',
-        speakerLabel: 'Guest',
-        voice: DEFAULT_GUEST_VOICE,
-        text: `Start with the early context, then connect the big milestones, and finally explain how those moments still shape the present-day conversation.`,
-      },
-      {
-        speaker: 'host',
-        speakerLabel: 'Host',
-        voice: DEFAULT_HOST_VOICE,
-        text: `That gives us the backbone. What is the biggest takeaway a listener should keep in mind at the end of the episode?`,
-      },
-      {
-        speaker: 'guest',
-        speakerLabel: 'Guest',
-        voice: DEFAULT_GUEST_VOICE,
-        text: `The biggest takeaway is that ${topic} is not just a sequence of facts. It is a story about decisions, trade-offs, and long-term consequences.`,
-      },
-    ],
+    summary: `An adaptive ${controls.durationMinutes}-minute ${controls.style.toLowerCase()} conversation about ${topic}, designed for a ${controls.audience.toLowerCase()} listener.`,
+    turns,
   };
 }
 
@@ -440,10 +531,14 @@ function createDraftEpisode({
   ownerId,
   topic,
   script,
+  controls,
+  provider,
 }: {
   ownerId: string;
   topic: string;
   script: GeneratedPodcastScript;
+  controls: PodcastGenerationControls;
+  provider: 'azure' | 'mock';
 }): PodcastEpisodeDraft {
   return {
     id: crypto.randomUUID(),
@@ -458,6 +553,9 @@ function createDraftEpisode({
       voice: turn.voice,
       text: turn.text,
     })),
+    controls,
+    provider,
+    generationStatus: 'preparing_audio',
     createdAt: new Date().toISOString(),
   };
 }
@@ -465,6 +563,27 @@ function createDraftEpisode({
 async function generateScriptWithAzure(
   config: AzurePodcastConfig,
   topic: string,
+  controls: PodcastGenerationControls,
+): Promise<GeneratedPodcastScript> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const script = await requestAzureScript(config, topic, controls);
+      validatePodcastScript(script.turns, controls.durationMinutes);
+      return script;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new PodcastDependencyError('Azure OpenAI returned an invalid podcast script twice.');
+}
+
+async function requestAzureScript(
+  config: AzurePodcastConfig,
+  topic: string,
+  controls: PodcastGenerationControls,
 ): Promise<GeneratedPodcastScript> {
   const headers = await getAzureOpenAiHeaders(config);
   const response = await fetch(
@@ -476,14 +595,15 @@ async function generateScriptWithAzure(
         messages: [
           {
             role: 'system',
-            content: `You are a professional podcast script writer who creates engaging, natural-sounding interview-style podcast episodes. Your scripts should feel like a real conversation between a knowledgeable host and an expert guest.
+             content: `You write accurate, natural host-and-guest podcasts for a ${controls.audience} audience in a ${controls.style} style. Target ${controls.durationMinutes} minutes at 130 spoken words per minute.
 
 Rules:
 - Return ONLY valid JSON with keys "title", "summary", and "turns"
 - "title": a catchy, specific episode title (not generic)
 - "summary": 2-3 sentence compelling episode description
-- "turns": array of 10-12 items alternating host and guest
-- Each turn has "speaker" ("host" or "guest") and "text" (2-4 natural sentences)
+- "turns": alternating host and guest, each turn no more than ${PODCAST_TURN_MAX_WORDS} words
+- Use short turns, natural transitions, occasional acknowledgements, specific facts, and minimal repetition
+- Define terminology for Beginner, balance context and detail for Intermediate, and use precise domain terminology for Expert
 - The host asks probing questions, sets context, and guides the conversation
 - The guest provides expert insights, anecdotes, and specific examples
 - Include natural conversational elements: reactions, follow-ups, occasional humor
@@ -496,7 +616,8 @@ Rules:
           },
         ],
         temperature: 0.8,
-        max_tokens: 3000,
+        max_tokens: Math.min(12000, controls.durationMinutes * 900),
+        response_format: { type: 'json_object' },
       }),
     },
   );
@@ -522,6 +643,64 @@ Rules:
   }
 
   return normaliseGeneratedScript(rawContent, config.hostVoice, config.guestVoice);
+}
+
+export function validatePodcastScript(
+  turns: Array<{ speaker: 'host' | 'guest'; text: string }>,
+  durationMinutes: EpisodeDurationMinutes,
+): void {
+  if (!turns.length || !turns.some((turn) => turn.speaker === 'host') || !turns.some((turn) => turn.speaker === 'guest')) {
+    throw new PodcastDependencyError('Podcast script must contain both host and guest turns.');
+  }
+  let totalWords = 0;
+  for (const turn of turns) {
+    const words = turn.text.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) throw new PodcastDependencyError('Podcast script contains an empty turn.');
+    if (words.length > PODCAST_TURN_MAX_WORDS) {
+      throw new PodcastDependencyError(`Podcast turn exceeds ${PODCAST_TURN_MAX_WORDS} words.`);
+    }
+    totalWords += words.length;
+  }
+  const maximumWords = durationMinutes * 130 * 1.2;
+  if (totalWords > maximumWords) {
+    throw new PodcastDependencyError('Podcast script substantially exceeds the requested duration.');
+  }
+}
+
+function buildPendingAudioSegments(turnCount: number): StoredAudioSegment[] {
+  const segments: StoredAudioSegment[] = [];
+  for (let turnStart = 0; turnStart < turnCount; turnStart += 2) {
+    segments.push({
+      id: crypto.randomUUID(),
+      index: segments.length,
+      turnStart,
+      turnEnd: Math.min(turnCount, turnStart + 2),
+      status: 'pending',
+    });
+  }
+  return segments;
+}
+
+async function synthesizeRemainingSegments(
+  config: AzurePodcastConfig,
+  episode: StoredPodcastEpisode,
+): Promise<void> {
+  for (const segment of episode.audioSegments.slice(1)) {
+    try {
+      const audioBuffer = await synthesizeAudioWithAzure(config, {
+        ...episode,
+        transcript: episode.transcript.slice(segment.turnStart, segment.turnEnd),
+      });
+      segment.audioBuffer = audioBuffer;
+      segment.audioContentType = 'audio/mpeg';
+      segment.status = 'ready';
+    } catch {
+      segment.status = 'failed';
+      episode.generationStatus = 'failed';
+      return;
+    }
+  }
+  episode.generationStatus = 'ready';
 }
 
 async function synthesizeAudioWithAzure(
@@ -638,7 +817,7 @@ function normaliseGeneratedScript(
       };
     })
     .filter((turn): turn is NonNullable<typeof turn> => turn !== null)
-    .slice(0, 14);
+    .slice(0, 60);
 
   if (turns.length < 4) {
     throw new PodcastDependencyError('Azure OpenAI returned too few valid turns for the podcast.');
@@ -768,21 +947,21 @@ function buildMockSteeredTurns({
       speaker: 'host',
       speakerLabel: 'Host',
       voice: hostVoice,
-      text: `Hold that thought — a listener just sent in a great question. They want to know: ${question} Let's hand that one to our guest.`,
+        text: `A listener asks: ${question} Give us the short answer.`,
     },
     {
       id: crypto.randomUUID(),
       speaker: 'guest',
       speakerLabel: 'Guest',
       voice: guestVoice,
-      text: `That's a fantastic question — ${question} Here's the short version: it's a thought experiment that sits right at the edge of what general relativity allows. Each eye crosses the event horizon at a slightly different moment, but because no signal can climb back out, the brain stops receiving anything from the eye that crossed first — so the picture you experience is exactly what light from outside the black hole still reaches you, until your second eye crosses too. There's no dramatic split-screen — just an ordinary view that ends, on each side, at slightly different instants.`,
+        text: `The key is how that question connects to ${topic}. It changed what was practical, reduced an important constraint, and let people operate at a scale that earlier approaches could not support. That is why it mattered beyond the technology itself.`,
     },
     {
       id: crypto.randomUUID(),
       speaker: 'host',
       speakerLabel: 'Host',
       voice: hostVoice,
-      text: `Brilliant — thanks for asking that. Let's pick up ${lastReference} and keep going from where we left off in this episode about ${topic}.`,
+        text: `Thanks for the question. Let's return to ${lastReference}.`,
     },
   ];
 }

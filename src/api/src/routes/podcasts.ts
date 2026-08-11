@@ -16,6 +16,9 @@ import { logger } from '../logger.js';
 
 interface CreatePodcastBody {
   topic?: unknown;
+  audience?: unknown;
+  durationMinutes?: unknown;
+  style?: unknown;
 }
 
 interface AskQuestionBody {
@@ -38,6 +41,20 @@ interface PodcastEpisodeResponse {
   audioAvailable: boolean;
   audioUrl: string | null;
   audioContentType: string | null;
+  controls: {
+    audience: 'Beginner' | 'Intermediate' | 'Expert';
+    durationMinutes: 5 | 10 | 15;
+    style: 'Conversational' | 'Educational' | 'Debate';
+  };
+  provider: 'azure' | 'mock';
+  generationStatus: 'preparing_audio' | 'ready' | 'failed';
+  audioSegments: Array<{
+    id: string;
+    index: number;
+    status: 'ready' | 'pending' | 'failed';
+    audioUrl: string | null;
+    audioContentType: string | null;
+  }>;
 }
 
 interface SteeredSegmentResponse {
@@ -71,7 +88,8 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
   });
 
   app.post('/api/podcasts', authMiddleware, async (req, res) => {
-    const topic = parseTopic(req.body as CreatePodcastBody);
+    const body = req.body as CreatePodcastBody;
+    const topic = parseTopic(body);
     if (!topic) {
       res.status(400).json({ error: 'Topic is required' });
       return;
@@ -83,11 +101,24 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
         .json({ error: `Topic must be ${PODCAST_TOPIC_MAX_LENGTH} characters or fewer` });
       return;
     }
+    const controls = parseControls(body);
+    if (!controls) {
+      res.status(400).json({
+        error: 'Audience, duration, or style is invalid',
+        supported: {
+          audience: ['Beginner', 'Intermediate', 'Expert'],
+          durationMinutes: [5, 10, 15],
+          style: ['Conversational', 'Educational', 'Debate'],
+        },
+      });
+      return;
+    }
 
     try {
       const episode = await podcastService.createEpisode({
         ownerId: req.user!.sub,
         topic,
+        controls,
       });
 
       res.status(201).json({
@@ -142,6 +173,20 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
     res.setHeader('Content-Type', episode.audioContentType);
     res.setHeader('Content-Length', episode.audioBuffer.length.toString());
     res.send(episode.audioBuffer);
+  });
+
+  app.get('/api/podcasts/:episodeId/audio/:segmentId', authMiddleware, async (req, res) => {
+    const episodeId = String(req.params.episodeId ?? '');
+    const segmentId = String(req.params.segmentId ?? '');
+    const episode = await podcastService.getEpisodeById({ episodeId, ownerId: req.user!.sub });
+    const segment = episode?.audioSegments.find((item) => item.id === segmentId);
+    if (!episode || !segment?.audioBuffer || !segment.audioContentType) {
+      res.status(404).json({ error: 'Audio segment not ready' });
+      return;
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', segment.audioContentType);
+    res.send(segment.audioBuffer);
   });
 
   app.post('/api/podcasts/:episodeId/questions', authMiddleware, async (req, res) => {
@@ -243,6 +288,26 @@ function parseTopic(body: CreatePodcastBody): string | null {
   return topic.length > 0 ? topic : null;
 }
 
+function parseControls(body: CreatePodcastBody): {
+  audience: 'Beginner' | 'Intermediate' | 'Expert';
+  durationMinutes: 5 | 10 | 15;
+  style: 'Conversational' | 'Educational' | 'Debate';
+} | null {
+  const audience = body.audience ?? 'Intermediate';
+  const durationMinutes = body.durationMinutes ?? 5;
+  const style = body.style ?? 'Conversational';
+  if (
+    !['Beginner', 'Intermediate', 'Expert'].includes(String(audience)) ||
+    ![5, 10, 15].includes(Number(durationMinutes)) ||
+    !['Conversational', 'Educational', 'Debate'].includes(String(style))
+  ) return null;
+  return {
+    audience: audience as 'Beginner' | 'Intermediate' | 'Expert',
+    durationMinutes: Number(durationMinutes) as 5 | 10 | 15,
+    style: style as 'Conversational' | 'Educational' | 'Debate',
+  };
+}
+
 function parseAskQuestion(
   body: AskQuestionBody,
 ): { question: string; playbackPositionSeconds: number } | null {
@@ -308,5 +373,19 @@ function toEpisodeResponse(
     audioAvailable: hasAudio,
     audioUrl: hasAudio ? `/api/podcasts/${episode.id}/audio` : null,
     audioContentType: hasAudio ? episode.audioContentType : null,
+    controls: episode.controls,
+    provider: episode.provider,
+    generationStatus: episode.generationStatus,
+    audioSegments: hasAudio
+      ? episode.audioSegments.map((segment) => ({
+          id: segment.id,
+          index: segment.index,
+          status: segment.status,
+          audioUrl: segment.status === 'ready'
+            ? `/api/podcasts/${episode.id}/audio/${segment.id}`
+            : null,
+          audioContentType: segment.audioContentType ?? null,
+        }))
+      : [],
   };
 }

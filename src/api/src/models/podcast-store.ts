@@ -13,12 +13,30 @@ export interface PodcastEpisodeDraft {
   title: string;
   summary: string;
   transcript: PodcastTranscriptTurn[];
+  controls: {
+    audience: 'Beginner' | 'Intermediate' | 'Expert';
+    durationMinutes: 5 | 10 | 15;
+    style: 'Conversational' | 'Educational' | 'Debate';
+  };
+  provider: 'azure' | 'mock';
+  generationStatus: 'preparing_audio' | 'ready' | 'failed';
   createdAt: string;
+}
+
+export interface StoredAudioSegment {
+  id: string;
+  index: number;
+  turnStart: number;
+  turnEnd: number;
+  status: 'ready' | 'pending' | 'failed';
+  audioBuffer?: Buffer;
+  audioContentType?: string;
 }
 
 export interface StoredPodcastEpisode extends PodcastEpisodeDraft {
   audioBuffer: Buffer;
   audioContentType: string;
+  audioSegments: StoredAudioSegment[];
   segments?: StoredSteeredSegment[];
 }
 

@@ -1,0 +1,5 @@
+{
+  "name": "@azure-podcast/shared",
+  "private": true,
+  "type": "module"
+}
