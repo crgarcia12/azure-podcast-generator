@@ -1,8 +1,8 @@
 import { test, expect } from './fixtures';
-import { loginUser, registerUser, uniqueUser } from './test-helpers';
+import { loginUser, registerUser } from './test-helpers';
 
 test('listener configures a progressive episode and asks a question', async ({ page }) => {
-  const username = uniqueUser('podcast');
+  const username = `pod_${Math.random().toString(36).slice(2, 10)}`;
   const password = 'SecurePass123!';
   await registerUser(page, username, password);
   await loginUser(page, username, password);

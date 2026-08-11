@@ -13,7 +13,7 @@ interface EpisodeResponse {
 let episode: EpisodeResponse | null = null;
 
 Given('a signed-in podcast listener', async function (this: CustomWorld) {
-  const username = `podcast_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+  const username = `pod_${Math.random().toString(36).slice(2, 10)}`;
   const password = 'SecurePass123!';
   await this.apiRequest('POST', '/api/auth/register', { username, password });
   await this.apiRequest('POST', '/api/auth/login', { username, password });
