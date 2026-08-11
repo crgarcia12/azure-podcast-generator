@@ -2,6 +2,7 @@ import { World, setWorldConstructor } from '@cucumber/cucumber';
 import { Browser, BrowserContext, Page, chromium } from '@playwright/test';
 import * as path from 'path';
 import * as fs from 'fs';
+import { API_URL, WEB_URL } from './urls';
 
 const SCREENSHOT_BASE_DIR = path.resolve(process.cwd(), 'docs', 'screenshots');
 const GENERATE_SCREENSHOTS = process.env.GENERATE_SCREENSHOTS === 'true';
@@ -17,8 +18,8 @@ export class CustomWorld extends World {
 
   response: { status: number; body: any; headers: Headers } | null = null;
   cookies: string[] = [];
-  apiBaseUrl = process.env.API_URL || 'http://localhost:5001';
-  webBaseUrl = process.env.WEB_URL || 'http://localhost:3001';
+  apiBaseUrl = API_URL;
+  webBaseUrl = WEB_URL;
   storedPasswords: Record<string, string> = {};
   tamperedJwt: string | null = null;
 
