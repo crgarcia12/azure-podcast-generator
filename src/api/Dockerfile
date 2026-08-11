@@ -9,7 +9,7 @@
 ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8
 
 # ---------- API build ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS api-build
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS api-build
 WORKDIR /api
 COPY src/api/package.json src/api/package-lock.json* ./
 RUN npm ci
@@ -18,7 +18,7 @@ COPY src/api/src ./src
 RUN npm run build && npm prune --omit=dev
 
 # ---------- Web build (basePath baked in) ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS web-build
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS web-build
 ARG BASE_PATH
 ENV BASE_PATH=${BASE_PATH}
 ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
@@ -28,10 +28,11 @@ WORKDIR /web
 COPY src/web/package.json src/web/package-lock.json* ./
 RUN npm ci
 COPY src/web/ ./
+COPY src/shared/ /shared/
 RUN npm run build
 
 # ---------- Runner ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS runner
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS runner
 ARG BASE_PATH
 ENV NODE_ENV=production
 ENV PORT=8080
