@@ -1,11 +1,10 @@
 import { test, expect } from './fixtures';
-import { loginUser, registerUser } from './test-helpers';
+import { registerUser } from './test-helpers';
 
 test('listener configures a progressive episode and asks a question', async ({ page }) => {
   const username = `pod_${Math.random().toString(36).slice(2, 10)}`;
   const password = 'SecurePass123!';
   await registerUser(page, username, password);
-  await loginUser(page, username, password);
 
   let generationPayload: Record<string, unknown> | undefined;
   page.on('request', (request) => {

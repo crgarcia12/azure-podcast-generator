@@ -16,8 +16,7 @@ Given('a signed-in podcast listener', async function (this: CustomWorld) {
   const username = `pod_${Math.random().toString(36).slice(2, 10)}`;
   const password = 'SecurePass123!';
   await this.apiRequest('POST', '/api/auth/register', { username, password });
-  await this.apiRequest('POST', '/api/auth/login', { username, password });
-  assert.equal(this.response?.status, 200);
+  assert.equal(this.response?.status, 201);
 });
 
 When(
