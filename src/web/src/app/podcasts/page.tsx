@@ -2,15 +2,35 @@
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch, toApiUrl } from '../lib/api';
-import {
-  AUDIENCE_LEVELS,
-  CONVERSATION_STYLES,
-  EPISODE_DURATIONS,
-  type AudienceLevel,
-  type ConversationStyle,
-  type EpisodeDurationMinutes,
-  type PodcastEpisodeContract,
-} from '../../../../shared/podcast';
+
+const AUDIENCE_LEVELS = ['Beginner', 'Intermediate', 'Expert'] as const;
+const EPISODE_DURATIONS = [5, 10, 15] as const;
+const CONVERSATION_STYLES = ['Conversational', 'Educational', 'Debate'] as const;
+type AudienceLevel = (typeof AUDIENCE_LEVELS)[number];
+type EpisodeDurationMinutes = (typeof EPISODE_DURATIONS)[number];
+type ConversationStyle = (typeof CONVERSATION_STYLES)[number];
+
+interface PodcastEpisodeContract {
+  id: string;
+  title: string;
+  summary: string;
+  controls: {
+    audience: AudienceLevel;
+    durationMinutes: EpisodeDurationMinutes;
+    style: ConversationStyle;
+  };
+  generationStatus: 'preparing_audio' | 'ready' | 'failed';
+  transcript: Array<{
+    id: string;
+    speakerLabel: 'Host' | 'Guest';
+    text: string;
+  }>;
+  audioSegments: Array<{
+    id: string;
+    status: 'ready' | 'pending' | 'failed';
+    audioUrl: string | null;
+  }>;
+}
 
 type InterventionState = 'idle' | 'received' | 'answering' | 'playing' | 'failed';
 
