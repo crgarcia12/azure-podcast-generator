@@ -54,6 +54,18 @@ describe('CORS middleware', () => {
     expect(res.headers['access-control-allow-origin']).toBe('https://example.com');
   });
 
+  it('allows podcast API preflight from the Liliput public HTTPS origin by default', async () => {
+    // Validates: frd-podcast-generator.md, authenticated browser API integration.
+    const app = createApp();
+    const res = await request(app)
+      .options('/api/podcasts')
+      .set('Origin', 'https://liliput.crgarcia.com.ar')
+      .set('Access-Control-Request-Method', 'POST');
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('https://liliput.crgarcia.com.ar');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
   it('rejects cross-origin requests with 403 (not 500) when origin is not allowed', async () => {
     process.env.ALLOWED_ORIGINS = 'http://localhost:3000';
     const app = createApp();

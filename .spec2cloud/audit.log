@@ -17,3 +17,8 @@
 [2026-04-13T22:12:36Z] step=extension-planning action=frds-generated count=1 result=done description="Created frd-podcast-generator.md for authenticated topic-driven podcast generation with Azure OpenAI and Azure AI Speech"
 [2026-04-13T22:12:36Z] step=extension-planning action=increments-generated count=1 result=done description="Planned ext-001 for end-to-end topic submission, script generation, speech synthesis, and mobile playback"
 [2026-04-13T22:12:36Z] step=research action=azure-ai-patterns result=done description="Verified Azure OpenAI Node.js guidance, Azure AI Speech browser playback guidance, and Azure Container Apps secret management patterns"
+[2026-08-11T17:34:49Z] step=verification action=test-infrastructure result=failed description="Cucumber BeforeAll could not start services because the Aspire CLI is unavailable in the Liliput runner"
+[2026-08-11T17:55:31Z] step=verification action=test-infrastructure result=success description="Cucumber standalone fallback started isolated mock API and Web services; 3 scenarios and 15 steps passed"
+[2026-08-11T21:15:23Z] step=bugfix action=test-created bug=bugfix-liliput-cors frd=frd-podcast-generator test=src/api/tests/unit/cors.test.ts result=failing
+[2026-08-11T21:15:23Z] step=bugfix action=fix-applied bug=bugfix-liliput-cors files=src/api/src/app.ts result=done
+[2026-08-11T21:16:21Z] step=bugfix action=regression-passed bug=bugfix-liliput-cors result=all-green

@@ -28,7 +28,11 @@ interface AppDependencies {
   castService?: CastService;
 }
 
-const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:3001'];
+const DEFAULT_ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:3001',
+  'https://liliput.crgarcia.com.ar',
+];
 
 function getConfiguredAllowedOrigins(): string[] {
   const configuredOrigins = process.env.ALLOWED_ORIGINS?.split(',')

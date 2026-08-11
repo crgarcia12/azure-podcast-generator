@@ -3,7 +3,7 @@ import { CustomWorld } from './world';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync, ChildProcess } from 'child_process';
+import { execSync, spawn, ChildProcess } from 'child_process';
 
 setDefaultTimeout(30_000);
 
@@ -21,6 +21,7 @@ const API_URL = process.env.API_URL || 'http://localhost:5001';
 const APPHOST_PATH = path.resolve(process.cwd(), 'apphost.cs');
 
 let aspireStarted = false;
+const standaloneProcesses: ChildProcess[] = [];
 
 async function isServerRunning(url: string): Promise<boolean> {
   try {
@@ -44,11 +45,88 @@ function isAspireRunning(): boolean {
   }
 }
 
+function isAspireAvailable(): boolean {
+  try {
+    execSync('aspire --version', { stdio: 'ignore' });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForServer(url: string, timeoutMs = 60_000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isServerRunning(url)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  throw new Error(`Timed out waiting for ${url}`);
+}
+
+function startStandaloneServices(): void {
+  const apiPort = new URL(API_URL).port || '5001';
+  const webPort = new URL(WEB_URL).port || '3000';
+  const detached = process.platform !== 'win32';
+
+  standaloneProcesses.push(
+    spawn('npm', ['run', 'dev:api'], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      detached,
+      env: {
+        ...process.env,
+        PORT: apiPort,
+        DB_PATH: ':memory:',
+        JWT_SECRET: process.env.JWT_SECRET || 'cucumber-test-secret',
+        PODCAST_PROVIDER: 'mock',
+      },
+    }),
+    spawn('npm', ['run', 'dev'], {
+      cwd: process.cwd(),
+      stdio: 'inherit',
+      detached,
+      env: {
+        ...process.env,
+        PORT: webPort,
+        NEXT_PUBLIC_API_URL: API_URL,
+      },
+    }),
+  );
+}
+
+function stopStandaloneProcess(child: ChildProcess): void {
+  if (child.killed || child.pid === undefined) {
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    child.kill('SIGTERM');
+    return;
+  }
+
+  try {
+    process.kill(-child.pid, 'SIGTERM');
+  } catch {
+    child.kill('SIGTERM');
+  }
+}
+
 BeforeAll(async function () {
   fs.mkdirSync(SCREENSHOT_BASE_DIR, { recursive: true });
 
-  // Use Aspire to orchestrate all services (API + Web)
   if (!(await isServerRunning(`${API_URL}/health`))) {
+    if (!isAspireAvailable()) {
+      console.log('Aspire CLI not found; starting API and Web directly...');
+      startStandaloneServices();
+      await Promise.all([
+        waitForServer(`${API_URL}/health`),
+        waitForServer(WEB_URL),
+      ]);
+      return;
+    }
+
     if (!isAspireRunning()) {
       console.log('Starting Aspire AppHost...');
       execSync(`aspire start --apphost "${APPHOST_PATH}" --nologo`, {
@@ -145,7 +223,6 @@ After(async function (this: CustomWorld, { result }) {
 });
 
 AfterAll(async function () {
-  // Stop Aspire if we started it
   if (aspireStarted) {
     try {
       execSync(`aspire stop --apphost "${APPHOST_PATH}" --nologo`, {
@@ -155,4 +232,9 @@ AfterAll(async function () {
     } catch { /* already stopped */ }
     aspireStarted = false;
   }
+
+  for (const child of standaloneProcesses) {
+    stopStandaloneProcess(child);
+  }
+  standaloneProcesses.length = 0;
 });
