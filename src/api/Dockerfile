@@ -6,7 +6,7 @@
 # one container, fronted by a small Node proxy. See LILIPUT_DEPLOY_CONTRACT.md
 # and scripts/liliput-launcher.mjs for the why.
 
-ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-15f4165a
+ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8
 
 # ---------- API build ----------
 FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS api-build
@@ -64,6 +64,7 @@ ENV REGISTRATION_ENABLED=true
 # and LILIPUT_DEPLOY_CONTRACT.md for why this is baked into the image
 # rather than configured on the Deployment.
 ENV LLM_PROVIDER=azure
+ENV PODCAST_PROVIDER=azure
 ENV AZURE_OPENAI_ENDPOINT=https://compy-foundry-ercqwl.cognitiveservices.azure.com
 ENV AZURE_OPENAI_DEPLOYMENT_NAME=podcast-gpt-4o-mini
 ENV AZURE_OPENAI_API_VERSION=2024-10-21
