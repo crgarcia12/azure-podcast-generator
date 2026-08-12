@@ -9,6 +9,15 @@ const CONVERSATION_STYLES = ['Conversational', 'Educational', 'Debate'] as const
 type AudienceLevel = (typeof AUDIENCE_LEVELS)[number];
 type EpisodeDurationMinutes = (typeof EPISODE_DURATIONS)[number];
 type ConversationStyle = (typeof CONVERSATION_STYLES)[number];
+type PodcastProvider = 'azure' | 'mock';
+
+interface PodcastProviderCapabilities {
+  defaultProvider: PodcastProvider;
+  providers: {
+    mock: { available: true; label: string };
+    azure: { available: boolean; label: string; model: string | null };
+  };
+}
 
 interface PodcastEpisodeContract {
   id: string;
@@ -20,6 +29,7 @@ interface PodcastEpisodeContract {
     style: ConversationStyle;
   };
   generationStatus: 'preparing_audio' | 'ready' | 'failed';
+  provider: PodcastProvider;
   transcript: Array<{
     id: string;
     speakerLabel: 'Host' | 'Guest';
@@ -44,6 +54,8 @@ export default function PodcastsPage() {
   const [audience, setAudience] = useState<AudienceLevel>('Intermediate');
   const [durationMinutes, setDurationMinutes] = useState<EpisodeDurationMinutes>(5);
   const [style, setStyle] = useState<ConversationStyle>('Conversational');
+  const [provider, setProvider] = useState<PodcastProvider>('mock');
+  const [providerCapabilities, setProviderCapabilities] = useState<PodcastProviderCapabilities | null>(null);
   const [episode, setEpisode] = useState<PodcastEpisodeContract | null>(null);
   const [generationStatus, setGenerationStatus] = useState('');
   const [question, setQuestion] = useState('');
@@ -56,9 +68,20 @@ export default function PodcastsPage() {
   const interventionAudioRef = useRef<HTMLAudioElement>(null);
   const interruptionPositionRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const providerSelectedRef = useRef(false);
 
   const readySegments = episode?.audioSegments.filter((segment) => segment.status === 'ready') ?? [];
   const activeSegment = readySegments[segmentIndex];
+
+  useEffect(() => {
+    void apiFetch('/api/podcasts/providers')
+      .then(async (response) => {
+        if (!response.ok) return;
+        const capabilities = await response.json() as PodcastProviderCapabilities;
+        setProviderCapabilities(capabilities);
+        if (!providerSelectedRef.current) setProvider(capabilities.defaultProvider);
+      });
+  }, []);
 
   useEffect(() => {
     if (!episode || episode.generationStatus === 'ready') return;
@@ -82,7 +105,7 @@ export default function PodcastsPage() {
       const response = await apiFetch('/api/podcasts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ topic: topic.trim(), audience, durationMinutes, style }),
+        body: JSON.stringify({ topic: topic.trim(), audience, durationMinutes, style, provider }),
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error ?? 'Unable to generate this episode');
@@ -193,6 +216,31 @@ export default function PodcastsPage() {
         </header>
 
         <form onSubmit={generate} className="rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl">
+          <fieldset className="mb-6">
+            <legend className="text-sm font-semibold">Podcast source</legend>
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <ProviderChoice
+                checked={provider === 'azure'}
+                label="Real podcast"
+                description={providerCapabilities?.providers.azure.available
+                  ? `Generated with Azure AI Foundry${providerCapabilities.providers.azure.model ? ` (${providerCapabilities.providers.azure.model})` : ''} and Azure Speech.`
+                  : 'Select to use Azure AI Foundry. Generation will explain any missing server configuration.'}
+                onChange={() => {
+                  providerSelectedRef.current = true;
+                  setProvider('azure');
+                }}
+              />
+              <ProviderChoice
+                checked={provider === 'mock'}
+                label="Mock audio"
+                description="Deterministic test content and synthetic tones. Not a real AI-generated podcast."
+                onChange={() => {
+                  providerSelectedRef.current = true;
+                  setProvider('mock');
+                }}
+              />
+            </div>
+          </fieldset>
           <label className="block text-sm font-semibold" htmlFor="topic">What should we explore?</label>
           <input id="topic" value={topic} onChange={(event) => setTopic(event.target.value)}
             className="mt-2 w-full rounded-xl border border-slate-600 bg-slate-950 px-4 py-3 focus:border-cyan-300 focus:outline-none"
@@ -205,6 +253,9 @@ export default function PodcastsPage() {
           </div>
           <button className="mt-6 rounded-xl bg-cyan-300 px-6 py-3 font-bold text-slate-950 hover:bg-cyan-200 focus:outline-none focus:ring-4 focus:ring-cyan-500"
             type="submit">Generate episode</button>
+          <p className="mt-3 text-sm text-slate-300" role="status">
+            Current source: {provider === 'azure' ? 'Real podcast from Azure AI Foundry' : 'Mock testing audio'}
+          </p>
         </form>
 
         {generationStatus && (
@@ -216,6 +267,11 @@ export default function PodcastsPage() {
 
         {episode && (
           <section className="mt-8 rounded-3xl bg-white p-6 text-slate-900">
+            <p className={`mb-3 inline-flex rounded-full px-3 py-1 text-sm font-bold ${
+              episode.provider === 'azure' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900'
+            }`}>
+              {episode.provider === 'azure' ? 'Real podcast · Azure AI Foundry' : 'Mock podcast · Testing audio'}
+            </p>
             <p className="text-sm font-semibold text-cyan-700">{episode.controls.audience} · {episode.controls.durationMinutes} min · {episode.controls.style}</p>
             <h2 className="mt-2 text-3xl font-bold">{episode.title}</h2>
             <p className="mt-2 text-slate-600">{episode.summary}</p>
@@ -267,6 +323,32 @@ export default function PodcastsPage() {
         <p className="sr-only" role="status" aria-live="polite">{announcement}</p>
       </div>
     </main>
+  );
+}
+
+function ProviderChoice({
+  checked,
+  label,
+  description,
+  onChange,
+}: {
+  checked: boolean;
+  label: string;
+  description: string;
+  onChange: () => void;
+}) {
+  return (
+    <button type="button" aria-pressed={checked} onClick={onChange} className={`rounded-xl border p-4 text-left ${
+      checked ? 'border-cyan-300 bg-cyan-950/60' : 'border-slate-600'
+    } cursor-pointer`}>
+      <span className="flex items-center gap-2 font-bold">
+        <span aria-hidden="true" className={`h-3 w-3 rounded-full border ${
+          checked ? 'border-cyan-300 bg-cyan-300' : 'border-slate-400'
+        }`} />
+        {label}
+      </span>
+      <span className="mt-1 block text-sm font-normal text-slate-300">{description}</span>
+    </button>
   );
 }
 

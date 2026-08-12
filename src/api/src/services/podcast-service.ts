@@ -33,6 +33,7 @@ export const PODCAST_TURN_MAX_WORDS = 80;
 export type AudienceLevel = 'Beginner' | 'Intermediate' | 'Expert';
 export type EpisodeDurationMinutes = 5 | 10 | 15;
 export type ConversationStyle = 'Conversational' | 'Educational' | 'Debate';
+export type PodcastProvider = 'azure' | 'mock';
 
 export interface PodcastGenerationControls {
   audience: AudienceLevel;
@@ -44,6 +45,7 @@ interface CreatePodcastInput {
   ownerId: string;
   topic: string;
   controls: PodcastGenerationControls;
+  provider?: PodcastProvider;
 }
 
 interface PodcastLookupInput {
@@ -118,6 +120,14 @@ export interface PodcastService {
   getSteeredSegment(input: SteerSegmentLookupInput): Promise<StoredSteeredSegment | null>;
 }
 
+export interface PodcastProviderCapabilities {
+  defaultProvider: PodcastProvider;
+  providers: {
+    mock: { available: true; label: 'Mock audio (testing only)' };
+    azure: { available: boolean; label: 'Real podcast (Azure AI Foundry)'; model: string | null };
+  };
+}
+
 export class PodcastConfigurationError extends Error {}
 
 export class PodcastEpisodeNotFoundError extends Error {
@@ -138,27 +148,63 @@ let azureCredential: DefaultAzureCredential | null = null;
 
 export function createPodcastService(): PodcastService {
   const configuredProvider = process.env.PODCAST_PROVIDER?.trim().toLowerCase();
-  const hasAnyAzureConfig = [
-    process.env.AZURE_OPENAI_API_KEY,
-    process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
-    process.env.AZURE_OPENAI_ENDPOINT,
-    process.env.AZURE_SPEECH_KEY,
-    process.env.AZURE_SPEECH_REGION,
-    process.env.AZURE_SPEECH_RESOURCE_ID,
-  ].some((value) => Boolean(value));
+  const mockService = createMockPodcastService();
+  const azureConfig = readAzureConfig();
+  const azureService = azureConfig instanceof PodcastConfigurationError
+    ? createUnavailablePodcastService(azureConfig)
+    : createAzurePodcastService(azureConfig);
+  const defaultProvider: PodcastProvider = configuredProvider === 'mock'
+    ? 'mock'
+    : azureConfig instanceof PodcastConfigurationError ? 'mock' : 'azure';
 
-  if (configuredProvider === 'mock') {
-    return createMockPodcastService();
+  function serviceForProvider(provider: PodcastProvider): PodcastService {
+    return provider === 'azure' ? azureService : mockService;
   }
 
-  if (configuredProvider === 'azure' || hasAnyAzureConfig) {
-    const azureConfig = readAzureConfig();
-    return azureConfig instanceof PodcastConfigurationError
-      ? createUnavailablePodcastService(azureConfig)
-      : createAzurePodcastService(azureConfig);
-  }
+  return {
+    createEpisode(input) {
+      return serviceForProvider(input.provider ?? defaultProvider).createEpisode(input);
+    },
+    getEpisodeById(input) {
+      const episode = getOwnedEpisode(input.episodeId, input.ownerId);
+      return Promise.resolve(episode);
+    },
+    listEpisodes({ ownerId }) {
+      return Promise.resolve(getEpisodesByOwner(ownerId));
+    },
+    generateSteeredSegment(input) {
+      const episode = getOwnedEpisode(input.episodeId, input.ownerId);
+      if (!episode) {
+        throw new PodcastEpisodeNotFoundError('Podcast not found');
+      }
+      return serviceForProvider(episode.provider).generateSteeredSegment(input);
+    },
+    getSteeredSegment(input) {
+      const episode = getOwnedEpisode(input.episodeId, input.ownerId);
+      if (!episode) {
+        return Promise.resolve(null);
+      }
+      return serviceForProvider(episode.provider).getSteeredSegment(input);
+    },
+  };
+}
 
-  return createMockPodcastService();
+export function getPodcastProviderCapabilities(): PodcastProviderCapabilities {
+  const azureConfig = readAzureConfig();
+  const azureAvailable = !(azureConfig instanceof PodcastConfigurationError);
+  return {
+    defaultProvider: process.env.PODCAST_PROVIDER?.trim().toLowerCase() === 'mock' || !azureAvailable
+      ? 'mock'
+      : 'azure',
+    providers: {
+      mock: { available: true, label: 'Mock audio (testing only)' },
+      azure: {
+        available: azureAvailable,
+        label: 'Real podcast (Azure AI Foundry)',
+        model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME?.trim() || null,
+      },
+    },
+  };
 }
 
 function recordTiming(

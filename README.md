@@ -68,6 +68,8 @@ AZURE_OPENAI_DEPLOYMENT_NAME=
 AZURE_SPEECH_REGION=
 ```
 
+The podcast page shows whether generation uses deterministic mock audio or a real Azure AI Foundry model. When Azure is configured, listeners can choose **Real podcast** per episode; `AZURE_OPENAI_DEPLOYMENT_NAME` should point to a high-quality Foundry deployment such as GPT-4.1 (subject to regional availability and quota). Mock mode remains available for automated testing.
+
 Then choose one of these auth modes:
 
 **API keys**

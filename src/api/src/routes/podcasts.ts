@@ -7,6 +7,8 @@ import {
   PodcastEpisodeNotFoundError,
   QUESTION_MAX_LENGTH,
   QUESTION_MIN_LENGTH,
+  getPodcastProviderCapabilities,
+  type PodcastProvider,
   type PodcastEpisodeDraft,
   type PodcastService,
   type StoredPodcastEpisode,
@@ -19,6 +21,7 @@ interface CreatePodcastBody {
   audience?: unknown;
   durationMinutes?: unknown;
   style?: unknown;
+  provider?: unknown;
 }
 
 interface AskQuestionBody {
@@ -75,6 +78,10 @@ interface SteeredSegmentResponse {
 }
 
 export function mapPodcastEndpoints(app: Express, podcastService: PodcastService): void {
+  app.get('/api/podcasts/providers', authMiddleware, (_req, res) => {
+    res.json(getPodcastProviderCapabilities());
+  });
+
   app.get('/api/podcasts', authMiddleware, async (req, res) => {
     try {
       const episodes = await podcastService.listEpisodes({ ownerId: req.user!.sub });
@@ -113,12 +120,18 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
       });
       return;
     }
+    const provider = parseProvider(body.provider);
+    if (!provider) {
+      res.status(400).json({ error: 'Provider must be either azure or mock' });
+      return;
+    }
 
     try {
       const episode = await podcastService.createEpisode({
         ownerId: req.user!.sub,
         topic,
         controls,
+        provider,
       });
 
       res.status(201).json({
@@ -277,6 +290,11 @@ export function mapPodcastEndpoints(app: Express, podcastService: PodcastService
       res.send(segment.audioBuffer);
     },
   );
+}
+
+function parseProvider(value: unknown): PodcastProvider | null {
+  const provider = value ?? getPodcastProviderCapabilities().defaultProvider;
+  return provider === 'azure' || provider === 'mock' ? provider : null;
 }
 
 function parseTopic(body: CreatePodcastBody): string | null {

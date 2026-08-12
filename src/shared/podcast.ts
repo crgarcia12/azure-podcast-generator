@@ -5,6 +5,7 @@ export const CONVERSATION_STYLES = ['Conversational', 'Educational', 'Debate'] a
 export type AudienceLevel = (typeof AUDIENCE_LEVELS)[number];
 export type EpisodeDurationMinutes = (typeof EPISODE_DURATIONS)[number];
 export type ConversationStyle = (typeof CONVERSATION_STYLES)[number];
+export type PodcastProvider = 'azure' | 'mock';
 export type PodcastGenerationStatus = 'generating_script' | 'preparing_audio' | 'ready' | 'failed';
 export type InterventionStatus =
   | 'idle'
@@ -19,6 +20,19 @@ export interface PodcastGenerationControls {
   audience: AudienceLevel;
   durationMinutes: EpisodeDurationMinutes;
   style: ConversationStyle;
+}
+
+export interface CreatePodcastRequest extends PodcastGenerationControls {
+  topic: string;
+  provider: PodcastProvider;
+}
+
+export interface PodcastProviderCapabilities {
+  defaultProvider: PodcastProvider;
+  providers: {
+    mock: { available: true; label: 'Mock audio (testing only)' };
+    azure: { available: boolean; label: 'Real podcast (Azure AI Foundry)'; model: string | null };
+  };
 }
 
 export interface PodcastTranscriptTurn {
@@ -45,7 +59,7 @@ export interface PodcastEpisodeContract {
   summary: string;
   createdAt: string;
   controls: PodcastGenerationControls;
-  provider: 'azure' | 'mock';
+  provider: PodcastProvider;
   generationStatus: PodcastGenerationStatus;
   transcript: PodcastTranscriptTurn[];
   audioSegments: PodcastAudioSegment[];
