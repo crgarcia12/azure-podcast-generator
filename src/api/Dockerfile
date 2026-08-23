@@ -72,6 +72,9 @@ ENV AZURE_OPENAI_API_VERSION=2024-10-21
 ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o-mini (Azure OpenAI · compy-foundry)"
 ENV AZURE_TENANT_ID=f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3
 ENV AZURE_OPENAI_CLIENT_ID=f14665ae-86f5-41c2-95ba-96e817132222
+ENV AZURE_SPEECH_REGION=eastus2
+ENV AZURE_SPEECH_RESOURCE_ID=/subscriptions/ac866176-3fcf-43c6-817a-6309be256398/resourceGroups/crgar-ai-rg/providers/Microsoft.CognitiveServices/accounts/crgar-liliput-ai
+ENV PODCAST_PROMPT_LOGGING=false
 
 WORKDIR /app
 

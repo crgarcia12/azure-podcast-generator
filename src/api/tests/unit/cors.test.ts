@@ -35,12 +35,15 @@ describe('CORS middleware', () => {
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 
-  it('allows Liliput same-origin preflight requests identified by its forwarded prefix', async () => {
+  it('uses the public forwarded scheme for Liliput same-origin preflight requests', async () => {
     const app = createApp();
     const res = await request(app)
       .options('/api/podcasts')
-      .set('Host', 'api.internal:8080')
+      .set('Host', 'liliput.crgarcia.com.ar')
       .set('Origin', 'https://liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Host', 'liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Scheme', 'https')
       .set('X-Forwarded-Prefix', '/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8')
       .set('Sec-Fetch-Site', 'same-origin')
       .set('Access-Control-Request-Method', 'POST')
@@ -87,8 +90,11 @@ describe('CORS middleware', () => {
     const app = createApp();
     const res = await request(app)
       .get('/api/info')
-      .set('Host', 'api.internal:8080')
+      .set('Host', 'liliput.crgarcia.com.ar')
       .set('Origin', 'https://evil.example.com')
+      .set('X-Forwarded-Host', 'liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Scheme', 'https')
       .set('X-Forwarded-Prefix', '/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8')
       .set('Sec-Fetch-Site', 'cross-site');
     expect(res.status).toBe(403);

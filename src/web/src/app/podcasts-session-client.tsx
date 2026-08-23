@@ -87,6 +87,11 @@ export default function PodcastsSessionClient() {
   const [playbackIndex, setPlaybackIndex] = useState(0);
   const [lastCompletedSegmentId, setLastCompletedSegmentId] = useState<string | null>(null);
   const [needsManualPlay, setNeedsManualPlay] = useState(false);
+  const [requiresAuthentication, setRequiresAuthentication] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [isAuthenticating, setIsAuthenticating] = useState(false);
 
   const episodeAudioRef = useRef<HTMLAudioElement | null>(null);
   const answerAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -340,8 +345,7 @@ export default function PodcastsSessionClient() {
     void playAnswer();
   }, [answerSource]);
 
-  const handleCreateSession = async (event: FormEvent) => {
-    event.preventDefault();
+  const createPodcastSession = async () => {
     const trimmedTopic = topic.trim();
     if (!trimmedTopic) {
       setError('Enter a topic.');
@@ -375,11 +379,18 @@ export default function PodcastsSessionClient() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null) as { error?: string } | null;
+        if (response.status === 401) {
+          setRequiresAuthentication(true);
+          setStageText('Sign in required');
+          setAnnouncement('Your session expired. Sign in to continue generating this episode.');
+          return;
+        }
         throw new Error(data?.error || `Session creation failed with status ${response.status}`);
       }
 
       const data = (await response.json()) as SessionEnvelope;
       const parsed = parseSession(data);
+      setRequiresAuthentication(false);
       setSession(parsed);
       setStageText(generationLabel(parsed.generationState));
       setAnnouncement(generationLabel(parsed.generationState));
@@ -389,12 +400,100 @@ export default function PodcastsSessionClient() {
     }
   };
 
+  const handleCreateSession = (event: FormEvent) => {
+    event.preventDefault();
+    void createPodcastSession();
+  };
+
+  const authenticate = async (mode: 'login' | 'register') => {
+    if (!username.trim() || !password) {
+      setAuthError('Enter your username and password.');
+      return;
+    }
+
+    setAuthError(null);
+    setIsAuthenticating(true);
+    try {
+      const response = await apiFetch(`/api/auth/${mode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: username.trim(), password }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(data?.error || `Authentication failed with status ${response.status}`);
+      }
+
+      setRequiresAuthentication(false);
+      setAnnouncement('Signed in. Continuing episode generation.');
+      await createPodcastSession();
+    } catch (err) {
+      setAuthError(err instanceof Error ? err.message : 'Unable to authenticate.');
+    } finally {
+      setIsAuthenticating(false);
+    }
+  };
+
   const transcript: PodcastTranscriptTurn[] = session?.transcript ?? [];
   const controls: PodcastGenerationControls | null = session?.controls ?? null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-5xl flex-col gap-6 px-4 py-6 md:px-8">
       <h1 className="text-2xl font-semibold">Podcast sessions</h1>
+
+      {requiresAuthentication ? (
+        <section className="rounded-lg border border-amber-300 bg-amber-50 p-4">
+          <h2 className="text-lg font-semibold">Sign in to generate</h2>
+          <p className="mt-1 text-sm text-black/70">
+            Your session expired. Sign in or create an account, and the episode request will continue automatically.
+          </p>
+          <form
+            className="mt-4 grid gap-3 sm:grid-cols-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void authenticate('login');
+            }}
+          >
+            <label className="flex flex-col gap-1">
+              <span className="font-medium">Username</span>
+              <input
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                autoComplete="username"
+                className="rounded border border-black/25 px-3 py-2"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="font-medium">Password</span>
+              <input
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                className="rounded border border-black/25 px-3 py-2"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 sm:col-span-2">
+              <button
+                type="submit"
+                disabled={isAuthenticating}
+                className="rounded bg-black px-4 py-2 text-white disabled:opacity-50"
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                disabled={isAuthenticating}
+                onClick={() => void authenticate('register')}
+                className="rounded border border-black/25 px-4 py-2 disabled:opacity-50"
+              >
+                Create account
+              </button>
+            </div>
+            {authError ? <p role="alert" className="text-sm text-red-700 sm:col-span-2">{authError}</p> : null}
+          </form>
+        </section>
+      ) : null}
 
       <section className="rounded-lg border border-black/10 p-4">
         <form onSubmit={handleCreateSession} className="grid gap-4 md:grid-cols-2">

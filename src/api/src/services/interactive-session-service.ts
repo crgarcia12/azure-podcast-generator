@@ -38,6 +38,7 @@ import {
   startTimer,
 } from './telemetry.js';
 import { createK8sFederatedAadCredentialFromEnv } from './k8s-aad-credential.js';
+import { logger } from '../logger.js';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
@@ -731,6 +732,37 @@ function styleGuidance(style: PodcastConversationStyle): string {
   return 'Keep the exchange warm and conversational with brief acknowledgements and natural follow-up questions.';
 }
 
+export function buildAzureEpisodeSystemPrompt(controls: PodcastGenerationControls): string {
+  const targetWords = controls.durationMinutes * CANONICAL_WPM;
+  const minimumTurns = Math.ceil((targetWords * 0.8) / 65);
+  return [
+    'Write a genuine interview-style podcast between a curious host and a domain-expert guest.',
+    `Target approximately ${targetWords} spoken words for ${controls.durationMinutes} minutes, within plus or minus 20 percent.`,
+    `Use at least ${minimumTurns} short, strictly alternating host and guest turns; every turn must contain 1 to 80 words.`,
+    audienceGuidance(controls.audienceLevel),
+    styleGuidance(controls.conversationStyle),
+    'Build a clear narrative arc: open with a compelling question, establish essential context, explore concrete examples and turning points, examine nuance or disagreement, and close with a memorable takeaway.',
+    'Make each turn respond directly to the previous turn. Let the host ask specific follow-ups and occasionally summarize; let the guest use concrete names, dates, mechanisms, comparisons, and consequences when factual support is available.',
+    'Use occasional brief acknowledgements and natural transitions, but avoid repetitive praise, generic filler, invented quotations, unsupported certainty, and repeated explanations.',
+  ].join(' ');
+}
+
+function logPromptDiagnostic(schemaName: string, systemPrompt: string, userPrompt: string): void {
+  if (process.env.PODCAST_PROMPT_LOGGING?.trim().toLowerCase() !== 'true') {
+    return;
+  }
+  logger.info(
+    {
+      promptDiagnostic: {
+        schemaName,
+        systemPrompt,
+        userPrompt,
+      },
+    },
+    'podcast_prompt_diagnostic',
+  );
+}
+
 async function callAzureJson(
   config: AzureInteractiveConfig,
   system: string,
@@ -738,6 +770,7 @@ async function callAzureJson(
   schemaName: string,
   schema: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
+  logPromptDiagnostic(schemaName, system, user);
   const response = await fetch(
     `${config.endpoint}/openai/deployments/${encodeURIComponent(config.deployment)}/chat/completions?api-version=${encodeURIComponent(config.apiVersion)}`,
     {
@@ -782,15 +815,7 @@ async function generateAzureScript(
   topic: string,
   controls: PodcastGenerationControls,
 ): Promise<AzureScript> {
-  const targetWords = controls.durationMinutes * CANONICAL_WPM;
-  const system = [
-    'Write a genuine interview-style podcast between a host and expert guest.',
-    `Target approximately ${targetWords} spoken words for ${controls.durationMinutes} minutes, within plus or minus 20 percent.`,
-    audienceGuidance(controls.audienceLevel),
-    styleGuidance(controls.conversationStyle),
-    'Use short strictly alternating host and guest turns. Every turn must contain 1 to 80 words.',
-    'Include natural transitions and occasional acknowledgements, avoid repetition, and keep every claim relevant to the topic.',
-  ].join(' ');
+  const system = buildAzureEpisodeSystemPrompt(controls);
   const schema = {
     type: 'object',
     additionalProperties: false,

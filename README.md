@@ -87,9 +87,12 @@ Optional settings:
 
 ```text
 AZURE_OPENAI_API_VERSION=2024-10-21
+PODCAST_PROMPT_LOGGING=false
 PODCAST_HOST_VOICE=en-US-JennyNeural
 PODCAST_GUEST_VOICE=en-US-GuyNeural
 ```
+
+Set `PODCAST_PROMPT_LOGGING=true` only while diagnosing generation quality. It writes the rendered system and user prompts to the API log as `podcast_prompt_diagnostic` entries; prompts can contain the submitted topic or question, so leave it disabled in environments where those values are sensitive.
 
 The same `AZURE_OPENAI_*` and `AZURE_SPEECH_*` settings power the **Ask a question** feature: mid-episode listener questions are answered with the same provider, model deployment, and host/guest voices as the original episode.
 

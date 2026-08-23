@@ -3,6 +3,7 @@ import request from 'supertest';
 import { createApp } from '../../src/app.js';
 import { clearSessions } from '../../src/models/session-store.js';
 import { clearUsers } from '../../src/models/user-store.js';
+import { buildAzureEpisodeSystemPrompt } from '../../src/services/interactive-session-service.js';
 
 async function authenticatedAgent(username = 'ctrl_user') {
   const app = createApp();
@@ -154,6 +155,23 @@ describe('POST /api/podcasts/sessions — controls', () => {
     );
     expect(audioRes.status).toBe(200);
     expect(audioRes.headers['content-type']).toContain('audio');
+  });
+});
+
+describe('Azure episode prompt', () => {
+  it('requests a concrete, responsive narrative with enough short turns for the duration', () => {
+    const prompt = buildAzureEpisodeSystemPrompt({
+      audienceLevel: 'beginner',
+      durationMinutes: 10,
+      conversationStyle: 'conversational',
+    });
+
+    expect(prompt).toContain('at least 18 short, strictly alternating host and guest turns');
+    expect(prompt).toContain('Build a clear narrative arc');
+    expect(prompt).toContain('specific follow-ups');
+    expect(prompt).toContain('concrete names, dates, mechanisms, comparisons, and consequences');
+    expect(prompt).toContain('Use plain language');
+    expect(prompt).toContain('warm and conversational');
   });
 });
 
