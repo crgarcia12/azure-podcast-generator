@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execSync, ChildProcess } from 'child_process';
+import { API_URL, WEB_URL } from './urls';
 
 setDefaultTimeout(30_000);
 
@@ -16,8 +17,6 @@ if (!process.env.PATH?.split(path.delimiter).includes(DOTNET_TOOLS_PATH)) {
 
 const SCREENSHOT_BASE_DIR = path.resolve(process.cwd(), 'docs', 'screenshots');
 const GENERATE_SCREENSHOTS = process.env.GENERATE_SCREENSHOTS === 'true';
-const WEB_URL = process.env.WEB_URL || 'http://localhost:3001';
-const API_URL = process.env.API_URL || 'http://localhost:5001';
 const APPHOST_PATH = path.resolve(process.cwd(), 'apphost.cs');
 
 let aspireStarted = false;

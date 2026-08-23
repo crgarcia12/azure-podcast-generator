@@ -6,10 +6,10 @@
 # one container, fronted by a small Node proxy. See LILIPUT_DEPLOY_CONTRACT.md
 # and scripts/liliput-launcher.mjs for the why.
 
-ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-15f4165a
+ARG BASE_PATH=/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8
 
 # ---------- API build ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS api-build
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS api-build
 WORKDIR /api
 COPY src/api/package.json src/api/package-lock.json* ./
 RUN npm ci
@@ -18,7 +18,7 @@ COPY src/api/src ./src
 RUN npm run build && npm prune --omit=dev
 
 # ---------- Web build (basePath baked in) ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS web-build
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS web-build
 ARG BASE_PATH
 ENV BASE_PATH=${BASE_PATH}
 ENV NEXT_PUBLIC_BASE_PATH=${BASE_PATH}
@@ -28,10 +28,11 @@ WORKDIR /web
 COPY src/web/package.json src/web/package-lock.json* ./
 RUN npm ci
 COPY src/web/ ./
+COPY src/shared/ /shared/
 RUN npm run build
 
 # ---------- Runner ----------
-FROM mcr.microsoft.com/devcontainers/javascript-node:20-bookworm AS runner
+FROM mcr.microsoft.com/devcontainers/javascript-node:22-bookworm AS runner
 ARG BASE_PATH
 ENV NODE_ENV=production
 ENV PORT=8080
@@ -64,12 +65,16 @@ ENV REGISTRATION_ENABLED=true
 # and LILIPUT_DEPLOY_CONTRACT.md for why this is baked into the image
 # rather than configured on the Deployment.
 ENV LLM_PROVIDER=azure
+ENV PODCAST_PROVIDER=azure
 ENV AZURE_OPENAI_ENDPOINT=https://compy-foundry-ercqwl.cognitiveservices.azure.com
 ENV AZURE_OPENAI_DEPLOYMENT_NAME=podcast-gpt-4o-mini
 ENV AZURE_OPENAI_API_VERSION=2024-10-21
 ENV AZURE_OPENAI_MODEL_DISPLAY_NAME="gpt-4o-mini (Azure OpenAI · compy-foundry)"
 ENV AZURE_TENANT_ID=f75dc6d8-f0ea-4a54-9d3c-622e4aef8eb3
 ENV AZURE_OPENAI_CLIENT_ID=f14665ae-86f5-41c2-95ba-96e817132222
+ENV AZURE_SPEECH_REGION=eastus2
+ENV AZURE_SPEECH_RESOURCE_ID=/subscriptions/ac866176-3fcf-43c6-817a-6309be256398/resourceGroups/crgar-ai-rg/providers/Microsoft.CognitiveServices/accounts/crgar-liliput-ai
+ENV PODCAST_PROMPT_LOGGING=false
 
 WORKDIR /app
 

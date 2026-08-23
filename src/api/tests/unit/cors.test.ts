@@ -35,6 +35,24 @@ describe('CORS middleware', () => {
     expect(res.headers['access-control-allow-credentials']).toBe('true');
   });
 
+  it('uses the public forwarded scheme for Liliput same-origin preflight requests', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .options('/api/podcasts')
+      .set('Host', 'liliput.crgarcia.com.ar')
+      .set('Origin', 'https://liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Host', 'liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Scheme', 'https')
+      .set('X-Forwarded-Prefix', '/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8')
+      .set('Sec-Fetch-Site', 'same-origin')
+      .set('Access-Control-Request-Method', 'POST')
+      .set('Access-Control-Request-Headers', 'content-type');
+    expect(res.status).toBe(204);
+    expect(res.headers['access-control-allow-origin']).toBe('https://liliput.crgarcia.com.ar');
+    expect(res.headers['access-control-allow-credentials']).toBe('true');
+  });
+
   it('allows POST /api/auth/register from same origin via reverse proxy (regression: was 500 before fix)', async () => {
     const app = createApp();
     const res = await request(app)
@@ -66,6 +84,20 @@ describe('CORS middleware', () => {
     expect(res.body).toEqual({
       error: expect.stringMatching(/not allowed by CORS/i),
     });
+  });
+
+  it('rejects cross-site requests even when routed through a prefixed reverse proxy', async () => {
+    const app = createApp();
+    const res = await request(app)
+      .get('/api/info')
+      .set('Host', 'liliput.crgarcia.com.ar')
+      .set('Origin', 'https://evil.example.com')
+      .set('X-Forwarded-Host', 'liliput.crgarcia.com.ar')
+      .set('X-Forwarded-Proto', 'http')
+      .set('X-Forwarded-Scheme', 'https')
+      .set('X-Forwarded-Prefix', '/dev/crgarcia12/azure-podcast-generator/liliput-task-903211f8')
+      .set('Sec-Fetch-Site', 'cross-site');
+    expect(res.status).toBe(403);
   });
 
   it('falls back to Host header when X-Forwarded-Host is absent (local dev)', async () => {

@@ -50,8 +50,10 @@ function getRequestSameOrigin(req: Request): string | null {
   if (!host) {
     return null;
   }
+  const forwardedScheme = req.headers['x-forwarded-scheme'];
   const forwardedProto = req.headers['x-forwarded-proto'];
   const rawProto =
+    (typeof forwardedScheme === 'string' ? forwardedScheme : forwardedScheme?.[0]) ??
     (typeof forwardedProto === 'string' ? forwardedProto : forwardedProto?.[0]) ??
     (req.secure ? 'https' : 'http');
   const proto = String(rawProto).split(',')[0]?.trim().toLowerCase() || 'http';

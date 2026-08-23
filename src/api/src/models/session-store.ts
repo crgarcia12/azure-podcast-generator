@@ -6,6 +6,17 @@ import { deleteSessionAudio, clearAllAudio } from './audio-store.js';
 
 export type SessionStatus = 'generating' | 'ready' | 'interrupted' | 'error';
 export type SegmentStatus = 'pending' | 'generating' | 'ready' | 'failed' | 'stale';
+export type PodcastAudienceLevel = 'beginner' | 'intermediate' | 'expert';
+export type PodcastDurationMinutes = 5 | 10 | 15;
+export type PodcastConversationStyle = 'conversational' | 'educational' | 'debate';
+export type PodcastGenerationState = 'generating-script' | 'preparing-audio' | 'ready' | 'failed';
+export type InterventionState = 'received' | 'answering' | 'ready' | 'failed' | 'cancelled';
+
+export interface PodcastGenerationControls {
+  audienceLevel: PodcastAudienceLevel;
+  durationMinutes: PodcastDurationMinutes;
+  conversationStyle: PodcastConversationStyle;
+}
 
 export interface PodcastSegment {
   id: string;
@@ -27,6 +38,19 @@ export interface UserInterrupt {
   createdAt: string;
 }
 
+export interface PodcastIntervention {
+  id: string;
+  sessionId: string;
+  clientRequestId: string;
+  afterSegmentId: string;
+  questionText: string;
+  capturedPositionSeconds: number;
+  state: InterventionState;
+  answerText?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PodcastSession {
   id: string;
   userId: string;
@@ -35,6 +59,9 @@ export interface PodcastSession {
   summary: string;
   revision: number;
   status: SessionStatus;
+  controls: PodcastGenerationControls;
+  generationState: PodcastGenerationState;
+  estimatedDurationMinutes: number;
   segments: PodcastSegment[];
   interrupts: UserInterrupt[];
   pendingInterruptId?: string;
@@ -81,6 +108,11 @@ interface SessionRow {
   pending_interrupt_id: string | null;
   last_segment_index: number;
   favorite: number;
+  controls_audience_level: string;
+  controls_duration_minutes: number;
+  controls_conversation_style: string;
+  generation_state: string;
+  estimated_duration_minutes: number;
   created_at: string;
   updated_at: string;
 }
@@ -130,6 +162,13 @@ function loadSession(sessionId: string): PodcastSession | undefined {
     summary: row.summary,
     revision: row.revision,
     status: row.status as SessionStatus,
+    controls: {
+      audienceLevel: (row.controls_audience_level ?? 'intermediate') as PodcastAudienceLevel,
+      durationMinutes: (row.controls_duration_minutes ?? 10) as PodcastDurationMinutes,
+      conversationStyle: (row.controls_conversation_style ?? 'conversational') as PodcastConversationStyle,
+    },
+    generationState: (row.generation_state ?? 'ready') as PodcastGenerationState,
+    estimatedDurationMinutes: row.estimated_duration_minutes ?? 10,
     contextSummary: row.context_summary ?? undefined,
     pendingInterruptId: row.pending_interrupt_id ?? undefined,
     lastSegmentIndex: row.last_segment_index,
@@ -159,15 +198,25 @@ function loadSession(sessionId: string): PodcastSession | undefined {
 
 function persistSession(session: PodcastSession): void {
   const db = getDatabase();
-  // Use ON CONFLICT UPDATE to avoid DELETE+INSERT which triggers ON DELETE CASCADE
   db.prepare(`
-    INSERT INTO sessions (id, user_id, topic, title, summary, revision, status, context_summary, pending_interrupt_id, last_segment_index, favorite, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sessions (
+      id, user_id, topic, title, summary, revision, status,
+      context_summary, pending_interrupt_id, last_segment_index, favorite,
+      controls_audience_level, controls_duration_minutes, controls_conversation_style,
+      generation_state, estimated_duration_minutes,
+      created_at, updated_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
       user_id = excluded.user_id, topic = excluded.topic, title = excluded.title,
       summary = excluded.summary, revision = excluded.revision, status = excluded.status,
       context_summary = excluded.context_summary, pending_interrupt_id = excluded.pending_interrupt_id,
       last_segment_index = excluded.last_segment_index, favorite = excluded.favorite,
+      controls_audience_level = excluded.controls_audience_level,
+      controls_duration_minutes = excluded.controls_duration_minutes,
+      controls_conversation_style = excluded.controls_conversation_style,
+      generation_state = excluded.generation_state,
+      estimated_duration_minutes = excluded.estimated_duration_minutes,
       created_at = excluded.created_at, updated_at = excluded.updated_at
   `).run(
     session.id,
@@ -181,6 +230,11 @@ function persistSession(session: PodcastSession): void {
     session.pendingInterruptId ?? null,
     session.lastSegmentIndex,
     session.favorite ? 1 : 0,
+    session.controls.audienceLevel,
+    session.controls.durationMinutes,
+    session.controls.conversationStyle,
+    session.generationState,
+    session.estimatedDurationMinutes,
     session.createdAt,
     session.updatedAt,
   );
@@ -230,14 +284,12 @@ export function createSession(params: {
   topic: string;
   title: string;
   summary: string;
-  segments: Array<{ hostLine: string; guestLine: string }>;
+  controls: PodcastGenerationControls;
+  generationState: PodcastGenerationState;
+  estimatedDurationMinutes: number;
+  segments: Array<{ hostLine: string; guestLine: string; status?: SegmentStatus }>;
 }): PodcastSession {
-  const userSessions = getSessionsByUser(params.userId);
-  if (userSessions.length >= SESSION_LIMITS.maxSessionsPerUser) {
-    throw new SessionLimitError(
-      `Maximum ${SESSION_LIMITS.maxSessionsPerUser} active sessions allowed. Delete an old session first.`,
-    );
-  }
+  assertSessionCapacity(params.userId);
 
   const now = new Date().toISOString();
   const session: PodcastSession = {
@@ -248,12 +300,15 @@ export function createSession(params: {
     summary: params.summary,
     revision: 0,
     status: 'ready',
+    controls: params.controls,
+    generationState: params.generationState,
+    estimatedDurationMinutes: params.estimatedDurationMinutes,
     segments: params.segments.map((seg, index) => ({
       id: crypto.randomUUID(),
       index,
       hostLine: seg.hostLine,
       guestLine: seg.guestLine,
-      status: 'ready' as SegmentStatus,
+      status: (seg.status ?? 'ready') as SegmentStatus,
       revision: 0,
       createdAt: now,
     })),
@@ -271,6 +326,14 @@ export function createSession(params: {
   })();
 
   return session;
+}
+
+export function assertSessionCapacity(userId: string): void {
+  if (getSessionsByUser(userId).length >= SESSION_LIMITS.maxSessionsPerUser) {
+    throw new SessionLimitError(
+      `Maximum ${SESSION_LIMITS.maxSessionsPerUser} active sessions allowed. Delete an old session first.`,
+    );
+  }
 }
 
 export function getSessionById(sessionId: string): PodcastSession | undefined {
@@ -514,10 +577,120 @@ export function getActiveSegments(session: PodcastSession): PodcastSegment[] {
 export function clearSessions(): void {
   const db = getDatabase();
   db.prepare('DELETE FROM chat_messages').run();
+  db.prepare('DELETE FROM interventions').run();
   db.prepare('DELETE FROM interrupts').run();
   db.prepare('DELETE FROM segments').run();
   db.prepare('DELETE FROM sessions').run();
   clearAllAudio();
+}
+
+// ─── Interventions CRUD ──────────────────────────────────────────────
+
+interface InterventionRow {
+  id: string;
+  session_id: string;
+  client_request_id: string;
+  after_segment_id: string;
+  question_text: string;
+  captured_position_seconds: number;
+  state: string;
+  answer_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function rowToIntervention(row: InterventionRow): PodcastIntervention {
+  return {
+    id: row.id,
+    sessionId: row.session_id,
+    clientRequestId: row.client_request_id,
+    afterSegmentId: row.after_segment_id,
+    questionText: row.question_text,
+    capturedPositionSeconds: row.captured_position_seconds,
+    state: row.state as InterventionState,
+    answerText: row.answer_text ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function createIntervention(params: {
+  sessionId: string;
+  clientRequestId: string;
+  afterSegmentId: string;
+  questionText: string;
+  capturedPositionSeconds: number;
+}): PodcastIntervention {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const id = params.clientRequestId;
+
+  // Check idempotency
+  const existing = db.prepare(
+    'SELECT * FROM interventions WHERE session_id = ? AND client_request_id = ?',
+  ).get(params.sessionId, params.clientRequestId) as InterventionRow | undefined;
+  if (existing) return rowToIntervention(existing);
+
+  db.prepare(`
+    INSERT INTO interventions
+      (id, session_id, client_request_id, after_segment_id, question_text,
+       captured_position_seconds, state, answer_text, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, 'received', NULL, ?, ?)
+  `).run(id, params.sessionId, params.clientRequestId, params.afterSegmentId,
+    params.questionText, params.capturedPositionSeconds, now, now);
+
+  return {
+    id,
+    sessionId: params.sessionId,
+    clientRequestId: params.clientRequestId,
+    afterSegmentId: params.afterSegmentId,
+    questionText: params.questionText,
+    capturedPositionSeconds: params.capturedPositionSeconds,
+    state: 'received',
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function updateIntervention(
+  interventionId: string,
+  updates: { state: InterventionState; answerText?: string },
+): PodcastIntervention | undefined {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  db.prepare(`
+    UPDATE interventions SET state = ?, answer_text = ?, updated_at = ?
+    WHERE id = ? AND state != 'cancelled'
+  `).run(updates.state, updates.answerText ?? null, now, interventionId);
+
+  const row = db.prepare('SELECT * FROM interventions WHERE id = ?').get(interventionId) as InterventionRow | undefined;
+  return row ? rowToIntervention(row) : undefined;
+}
+
+export function getIntervention(interventionId: string, sessionId: string): PodcastIntervention | undefined {
+  const db = getDatabase();
+  const row = db.prepare(
+    'SELECT * FROM interventions WHERE id = ? AND session_id = ?',
+  ).get(interventionId, sessionId) as InterventionRow | undefined;
+  return row ? rowToIntervention(row) : undefined;
+}
+
+export function cancelIntervention(interventionId: string, sessionId: string, userId: string): boolean {
+  // Ownership check: verify session belongs to user
+  const session = getOwnedSession(sessionId, userId);
+  if (!session) return false;
+
+  const db = getDatabase();
+  const row = db.prepare(
+    "SELECT * FROM interventions WHERE id = ? AND session_id = ? AND state IN ('received', 'answering')",
+  ).get(interventionId, sessionId) as InterventionRow | undefined;
+  if (!row) return false;
+
+  const now = new Date().toISOString();
+  db.prepare(
+    "UPDATE interventions SET state = 'cancelled', updated_at = ? WHERE id = ?",
+  ).run(now, interventionId);
+  return true;
 }
 
 // ─── Errors ──────────────────────────────────────────────────────────
