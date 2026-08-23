@@ -58,6 +58,12 @@ function getRequestSameOrigin(req: Request): string | null {
   return `${proto}://${host}`;
 }
 
+function isPrefixedSameOriginRequest(req: Request): boolean {
+  const forwardedPrefix = req.headers['x-forwarded-prefix'];
+  const prefix = (typeof forwardedPrefix === 'string' ? forwardedPrefix : forwardedPrefix?.[0])?.trim();
+  return Boolean(prefix?.startsWith('/') && prefix !== '/' && req.headers['sec-fetch-site'] === 'same-origin');
+}
+
 function seedConfiguredAdminUser(): void {
   const username = process.env.SEED_ADMIN_USERNAME?.trim();
   const password = process.env.SEED_ADMIN_PASSWORD?.trim();
@@ -109,6 +115,13 @@ export function createApp(dependencies: AppDependencies = {}): express.Express {
           // any proxy (Liliput, Container Apps, etc.) without per-environment
           // ALLOWED_ORIGINS config.
           if (sameOrigin && origin === sameOrigin) {
+            originCallback(null, true);
+            return;
+          }
+          // Path-stripping gateways can preserve an internal Host while
+          // forwarding the browser's public-prefix request. Fetch Metadata is
+          // browser-controlled and confirms that the request was same-origin.
+          if (isPrefixedSameOriginRequest(req as Request)) {
             originCallback(null, true);
             return;
           }
